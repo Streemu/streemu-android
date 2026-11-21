@@ -30,9 +30,21 @@ public sealed partial class ContaLeve
     public IReadOnlyList<GrupoDaConta> Grupos { get; private set; } = Array.Empty<GrupoDaConta>();
     public bool TemConta => _dispositivo != null && _segredoCifrado != null;
 
-    public ContaLeve(string arquivo, string apelido, Func<byte[], byte[]> cifrar, Func<byte[], byte[]> abrir)
+    /// <summary>O nome da conta (spec 027), igual em todos os aparelhos. Nulo enquanto a conta não tem nome (ou antes da primeira resposta do servidor).</summary>
+    public string? Nome { get; private set; }
+    /// <summary>O servidor já respondeu (renovar ou retirar) nesta execução, então <see cref="Nome"/> nulo quer dizer "a conta ainda não tem nome".</summary>
+    public bool NomeConhecido { get; private set; }
+    /// <summary>O nome da conta mudou (resposta do servidor ou <see cref="MudarNomeAsync"/>). Pode vir de qualquer thread.</summary>
+    public event Action? NomeMudou;
+
+    readonly Func<string?>? _apelidoSalvo;
+
+    /// <param name="apelido">Nome do dispositivo (o que aparece na lista de dispositivos da conta).</param>
+    /// <param name="apelidoSalvo">Só para a migração: o apelido que a pessoa salvou antes da spec 027 (nulo ou vazio se não há um de verdade).
+    /// Vai no /conta/renovar enquanto a conta não tem nome, e o servidor adota se for válido.</param>
+    public ContaLeve(string arquivo, string apelido, Func<byte[], byte[]> cifrar, Func<byte[], byte[]> abrir, Func<string?>? apelidoSalvo = null)
     {
-        _arquivo = arquivo; _apelido = apelido; _cifrar = cifrar; _abrir = abrir;
+        _arquivo = arquivo; _apelido = apelido; _cifrar = cifrar; _abrir = abrir; _apelidoSalvo = apelidoSalvo;
         Ler();
     }
 
@@ -90,12 +102,21 @@ public sealed partial class ContaLeve
             // só apaga quando o segredo não abre nunca mais; falha passageira (o Keystore subindo depois do boot) não desloga ninguém
             catch (Exception e) when (e is CryptographicException or FormatException) { Apagar(); return null; }
             catch (Exception) { return null; }
-            var (st, j) = await Chamar(Servidor!, "/conta/renovar", new JsonObject { ["dispositivo"] = _dispositivo, ["segredo"] = segredo, ["apelido"] = _apelido });
+            var (st, j) = await Chamar(Servidor!, "/conta/renovar", new JsonObject { ["dispositivo"] = _dispositivo, ["segredo"] = segredo, ["apelido"] = ApelidoDeMigracao() });
             if (st == HttpStatusCode.OK && j?["acesso"] != null) { Guardar(j); lock (_gate) return _acesso; }
             if (j?["erro"]?.GetValue<string>() == "conta_invalida") Apagar();
             return null;
         }
         finally { _renovando.Release(); }
+    }
+
+    /// <summary>O apelido antigo que vai no renovar para a migração; vazio quando a conta já tem nome ou não há um apelido de verdade ("Celular" não conta).</summary>
+    string ApelidoDeMigracao()
+    {
+        if (Nome != null) return "";
+        string a;
+        try { a = (_apelidoSalvo?.Invoke() ?? "").Trim(); } catch (Exception) { return ""; }
+        return a.Equals("celular", StringComparison.OrdinalIgnoreCase) ? "" : a.Length > NomeMaximo ? a[..NomeMaximo] : a;
     }
 
     /// <summary>Encerra este dispositivo no servidor e apaga o arquivo. Devolve se o servidor confirmou.</summary>
@@ -118,14 +139,27 @@ public sealed partial class ContaLeve
     {
         lock (_gate) { _acesso = JsonSeguro.Texto(j["acesso"]); _acessoExpira = JsonSeguro.Inteiro(j["expira"]) ?? 0; }
         ContaId = JsonSeguro.Texto(j["conta"]) ?? ContaId;
+        // o servidor sempre manda "nome" (nulo = conta sem nome); servidor antigo não manda e o que temos fica
+        bool mudouNome = false;
+        if (j.ContainsKey("nome"))
+        {
+            var novo = JsonSeguro.Texto(j["nome"]) is { Length: > 0 } n ? n : null;
+            mudouNome = novo != Nome; Nome = novo; NomeConhecido = true;
+        }
         // a lista de grupos vem do servidor e muda quando a pessoa cria, entra ou sai: tipo errado vira item ignorado, nunca exceção
         if (j["grupos"] is JsonArray gs)
             Grupos = gs.OfType<JsonObject>().Where(g => JsonSeguro.Texto(g["id"]) is { Length: > 0 })
                 .Select(g => new GrupoDaConta(JsonSeguro.Texto(g["id"])!, JsonSeguro.Texto(g["nome"]) ?? "")).ToList();
+        Persistir();
+        if (mudouNome) NomeMudou?.Invoke();
+    }
+
+    void Persistir()
+    {
         Directory.CreateDirectory(Path.GetDirectoryName(_arquivo)!);
         File.WriteAllText(_arquivo, new JsonObject
         {
-            ["servidor"] = Servidor, ["conta"] = ContaId, ["dispositivo"] = _dispositivo, ["segredo"] = _segredoCifrado,
+            ["servidor"] = Servidor, ["conta"] = ContaId, ["dispositivo"] = _dispositivo, ["segredo"] = _segredoCifrado, ["nome"] = Nome,
             ["grupos"] = new JsonArray(Grupos.Select(g => (JsonNode)new JsonObject { ["id"] = g.Id, ["nome"] = g.Nome }).ToArray()),
         }.ToJsonString());
     }
@@ -139,6 +173,7 @@ public sealed partial class ContaLeve
             if (j == null) return;
             Servidor = j["servidor"]?.GetValue<string>(); ContaId = j["conta"]?.GetValue<string>();
             _dispositivo = j["dispositivo"]?.GetValue<string>(); _segredoCifrado = j["segredo"]?.GetValue<string>();
+            Nome = JsonSeguro.Texto(j["nome"]) is { Length: > 0 } nm ? nm : null; // conta.json antigo não tem "nome"
             if (j["grupos"] is JsonArray gs)
                 Grupos = gs.OfType<JsonObject>().Select(g => new GrupoDaConta(g["id"]!.GetValue<string>(), g["nome"]?.GetValue<string>() ?? "")).ToList();
             if (Servidor == null) { _dispositivo = null; _segredoCifrado = null; }
@@ -149,6 +184,7 @@ public sealed partial class ContaLeve
     void Apagar()
     {
         lock (_gate) { _acesso = null; _acessoExpira = 0; }
+        Nome = null; NomeConhecido = false;
         _dispositivo = null; _segredoCifrado = null; ContaId = null; Grupos = Array.Empty<GrupoDaConta>();
         try { File.Delete(_arquivo); } catch { }
     }

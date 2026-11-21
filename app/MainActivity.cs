@@ -173,7 +173,7 @@ public class MainActivity : Android.App.Activity
     void Atualizar()
     {
         if (Sessao.Conta.TemConta != _mostrandoInicio) { Montar(); return; }
-        if (_mostrandoInicio) { AtualizarBarra(); MostrarAba(); }
+        if (_mostrandoInicio) { AtualizarBarra(); MostrarAba(); OferecerNomeSeFaltar(); }
     }
 
     // ================================================================================================ entrada na conta
@@ -524,22 +524,55 @@ public class MainActivity : Android.App.Activity
             .PutExtra("jogo", m.Live.Game).PutExtra("qualidade", m.Live.Quality).PutExtra("desde", m.Live.SinceUnixMs));
     }
 
-    void TrocarApelido()
+    /// <summary>"Mudar nome da conta" (aba Conta): grava pelo servidor, e a troca vale em todos os aparelhos.</summary>
+    void TrocarApelido() => PedirNome("Mudar nome da conta", "É como os amigos veem você em todos os aparelhos.", Sessao.Apelido);
+
+    /// <summary>Conta sem nome depois do renovar: o diálogo "Escolha seu nome", uma vez só.</summary>
+    void OferecerNomeSeFaltar()
     {
-        var campo = new EditText(this) { Text = Sessao.Apelido };
-        campo.SetFilters(new Android.Text.IInputFilter[] { new Android.Text.InputFilterLengthFilter(24) });
+        if (_dialogoNome || !Sessao.PrecisaEscolherNome) return;
+        Sessao.NomeOferecido();
+        PedirNome("Escolha seu nome", "É como os amigos veem você em todos os aparelhos.", Sessao.SugestaoDeNome);
+    }
+
+    bool _dialogoNome;
+
+    void PedirNome(string titulo, string texto, string inicial)
+    {
+        _dialogoNome = true;
+        var campo = new EditText(this) { Text = inicial };
+        campo.SetFilters(new Android.Text.IInputFilter[] { new Android.Text.InputFilterLengthFilter(ContaLeve.NomeMaximo) });
         campo.SetSelectAllOnFocus(true);
         campo.SetSingleLine(true);
-        var moldura = new FrameLayout(this);
-        moldura.SetPadding(Tema.Dp(this, 22), Tema.Dp(this, 8), Tema.Dp(this, 22), 0);
-        moldura.AddView(campo);
-        new Android.App.AlertDialog.Builder(this, Android.Resource.Style.ThemeDeviceDefaultDialogAlert)!
-            .SetTitle("Seu nome no grupo")!
-            .SetMessage("É como os amigos veem este celular na lista do grupo.")!
-            .SetView(moldura)!
-            .SetPositiveButton("Salvar", (_, _) => { if (campo.Text?.Trim() is { Length: > 0 } n) Sessao.Apelido = n; })!
+        var erro = Tema.Texto(this, "", 14, Tema.Erro);
+        erro.Visibility = ViewStates.Gone;
+        var coluna = Tema.Coluna(this);
+        coluna.SetPadding(Tema.Dp(this, 22), Tema.Dp(this, 8), Tema.Dp(this, 22), 0);
+        coluna.AddView(campo);
+        coluna.AddView(erro);
+        var dialogo = new Android.App.AlertDialog.Builder(this, Android.Resource.Style.ThemeDeviceDefaultDialogAlert)!
+            .SetTitle(titulo)!
+            .SetMessage(texto)!
+            .SetView(coluna)!
+            .SetPositiveButton("Salvar", (IDialogInterfaceOnClickListener?)null)!
             .SetNegativeButton("Cancelar", (_, _) => { })!
-            .Show();
+            .Create()!;
+        dialogo.DismissEvent += (_, _) => _dialogoNome = false;
+        dialogo.Show();
+        // o botão é religado à mão: com erro ou sem rede o diálogo fica aberto e o texto digitado não se perde
+        var salvar = dialogo.GetButton((int)DialogButtonType.Positive)!;
+        salvar.Click += async (_, _) =>
+        {
+            var nome = campo.Text?.Trim() ?? "";
+            if (nome.Length == 0) { erro.Text = "Escreva um nome."; erro.Visibility = ViewStates.Visible; return; }
+            if (nome == Sessao.Conta.Nome) { dialogo.Dismiss(); return; }
+            salvar.Enabled = false;
+            var (ok, aviso) = await Sessao.Conta.MudarNomeAsync(nome);
+            if (ok) { dialogo.Dismiss(); Toast.MakeText(this, "Seu nome agora é " + (Sessao.Conta.Nome ?? nome) + ".", ToastLength.Short)?.Show(); return; }
+            salvar.Enabled = true;
+            erro.Text = aviso ?? "Não deu certo. Tente de novo.";
+            erro.Visibility = ViewStates.Visible;
+        };
         campo.RequestFocus();
         MostrarTeclado(campo);
     }

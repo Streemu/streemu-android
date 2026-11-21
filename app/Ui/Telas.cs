@@ -557,7 +557,7 @@ static class Telas
         var textos = Tema.Coluna(c);
         textos.SetPadding(Tema.Dp(c, 14), 0, 0, 0);
         textos.AddView(Tema.Texto(c, Sessao.Apelido, 18, negrito: true));
-        textos.AddView(Tema.Texto(c, "Seu nome no grupo · toque para trocar", 14, Tema.TextoApagado));
+        textos.AddView(Tema.Texto(c, "Seu nome em todos os aparelhos · toque para mudar", 14, Tema.TextoApagado));
         linha.AddView(textos, Tema.Lp(0, Tema.Ajusta, 1));
         eu.AddView(linha);
         col.AddView(eu);

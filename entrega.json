@@ -1,7 +1,7 @@
 {
-  "versao": "0.1.11",
-  "versionCode": 12,
-  "notas": "- Telemetria: registrar crash do app no log e no evento \"crash\"",
+  "versao": "0.1.12",
+  "versionCode": 13,
+  "notas": "- Nome da conta no Android (spec 027)",
   "obrigatoria": false,
-  "privado": "a209ad9a358f1ebca6546b7f822de301aa1b58da"
+  "privado": "dc31083f9929159775541c7e2a51451f3773d780"
 }

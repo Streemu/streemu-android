@@ -34,7 +34,8 @@ static class Sessao
         AguardandoAtualizacao = aguardarAtualizacao;
         _prefs = c.GetSharedPreferences("streemu", FileCreationMode.Private)!;
         Streemu.Util.Log.Line += l => Android.Util.Log.Info("Streemu", l);
-        Conta = new ContaLeve(System.IO.Path.Combine(c.FilesDir!.AbsolutePath, "conta.json"), "celular (protótipo)", Cofre.Cifrar, Cofre.Abrir);
+        Conta = new ContaLeve(System.IO.Path.Combine(c.FilesDir!.AbsolutePath, "conta.json"), "celular (protótipo)", Cofre.Cifrar, Cofre.Abrir, ApelidoAntigo);
+        Conta.NomeMudou += AoMudarNome;
         RelayConfig.Token = () => Conta.AcessoAsync();
         Telemetria.Iniciar(c, forcar => Conta.AcessoAsync(forcar), () => Conta.TemConta ? Conta.Servidor : null, () => Apelido);
         Atualizacao.RegistrarResultadoPendente();
@@ -43,18 +44,31 @@ static class Sessao
         if (Conta.TemConta) AbrirSala(_prefs.GetString("grupo", null));
     }
 
-    /// <summary>O nome que os amigos veem na sala. Começa com o modelo do celular; a pessoa troca na aba Conta.</summary>
-    public static string Apelido
+    /// <summary>
+    /// O nome que os amigos veem: o nome da conta (spec 027), igual em todos os aparelhos. Quem ainda não tem nome usa o apelido que salvou antes
+    /// e, em último caso, "amigo", só para nunca mandar vazio. Troca-se com <see cref="ContaLeve.MudarNomeAsync"/>.
+    /// </summary>
+    public static string Apelido => Conta.Nome ?? ApelidoAntigo() ?? "amigo";
+
+    /// <summary>O apelido que a pessoa salvou antes da spec 027 (preferência <c>apelido</c>, que agora só serve para a migração). "Celular" era o padrão e não conta.</summary>
+    static string? ApelidoAntigo() =>
+        _prefs.GetString("apelido", null)?.Trim() is { Length: > 0 } a && !a.Equals("Celular", StringComparison.OrdinalIgnoreCase) ? a : null;
+
+    /// <summary>Sugestão para o diálogo "Escolha seu nome": o apelido antigo, se houver; senão vazio.</summary>
+    public static string SugestaoDeNome => ApelidoAntigo() ?? "";
+
+    /// <summary>
+    /// A conta (já confirmada pelo servidor) ficou sem nome e a pessoa ainda não viu o diálogo "Escolha seu nome". Ele aparece uma vez só:
+    /// quem chama mostra e chama <see cref="NomeOferecido"/>.
+    /// </summary>
+    public static bool PrecisaEscolherNome => Iniciada && Conta.TemConta && Conta.NomeConhecido && Conta.Nome == null && !_prefs.GetBoolean("nome_oferecido", false);
+
+    public static void NomeOferecido() => _prefs.Edit()!.PutBoolean("nome_oferecido", true)!.Apply();
+
+    static void AoMudarNome()
     {
-        get => _prefs.GetString("apelido", null) is { Length: > 0 } a ? a : "Celular";
-        set
-        {
-            var limpo = value.Trim();
-            if (limpo.Length > 24) limpo = limpo[..24];
-            _prefs.Edit()!.PutString("apelido", limpo)!.Apply();
-            Sala?.SetNick(Apelido);
-            Avisar();
-        }
+        Sala?.SetNick(Apelido);
+        Avisar();
     }
 
     public static string NomeDoGrupo => Sala?.GrupoNome is { Length: > 0 } n ? n : Conta.Grupos.FirstOrDefault(g => g.Id == GrupoId)?.Nome ?? "";
@@ -128,6 +142,8 @@ static class Sessao
     static void AoMudarSala()
     {
         var sala = Sala;
+        // a sala difunde o nome da minha conta: se a troca foi feita em outro aparelho (o PC, por exemplo), mostro esse
+        if (sala?.Find(sala.MyId) is { } eu && eu.Nick.Trim() is { Length: > 0 } nick && !nick.Equals("amigo", StringComparison.OrdinalIgnoreCase)) Conta.AdotarNomeDaSala(nick);
         if (sala is { Connected: true })
         {
             // o avatar de cada amigo, uma vez por sala (o PC manda o dele sozinho também; pedir cobre quem já estava lá)

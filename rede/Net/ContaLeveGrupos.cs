@@ -161,6 +161,54 @@ public sealed partial class ContaLeve
         return new(false, "erro", TextoGenerico);
     }
 
+    // ------------------------------------------------------------------ nome da conta (spec 027)
+
+    /// <summary>Tamanho máximo do nome da conta (o mesmo do servidor).</summary>
+    public const int NomeMaximo = 24;
+
+    /// <summary>
+    /// Troca o nome da conta (<c>POST /conta/nome</c>), que vale em todos os aparelhos e grupos. Ok = o servidor guardou;
+    /// senão <c>Texto</c> é a frase para mostrar (a do servidor, quando ele manda). Não lança. Um 401 renova o token e tenta mais uma vez.
+    /// </summary>
+    public async Task<(bool Ok, string? Texto)> MudarNomeAsync(string nome)
+    {
+        try
+        {
+            nome = string.Join(' ', (nome ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+            if (nome.Length == 0 || nome.Length > NomeMaximo) return (false, "O nome precisa ter de 1 a 24 letras.");
+            var (st, j, texto) = await ChamarComTokenAsync(HttpMethod.Post, "/conta/nome", new JsonObject { ["nome"] = nome });
+            if (texto != null) return (false, texto);
+            if (st == HttpStatusCode.OK)
+            {
+                var novo = JsonSeguro.Texto(j?["nome"]) is { Length: > 0 } n ? n : nome;
+                bool mudou = novo != Nome;
+                Nome = novo; NomeConhecido = true;
+                try { Persistir(); } catch (Exception e) { Log.Info("[conta] guardar nome: " + e.GetType().Name); }
+                if (mudou) NomeMudou?.Invoke();
+                return (true, null);
+            }
+            var erro = JsonSeguro.Texto(j?["erro"]);
+            var doServidor = JsonSeguro.Texto(j?["texto"]);
+            return (false, erro switch
+            {
+                "nome_invalido" => string.IsNullOrWhiteSpace(doServidor) ? "Esse nome não vale. Use de 1 a 24 letras." : doServidor,
+                "muitas_trocas" => string.IsNullOrWhiteSpace(doServidor) ? "Você já trocou o nome muitas vezes hoje. Tente amanhã." : doServidor,
+                _ => FraseDeGrupo(erro, doServidor),
+            });
+        }
+        catch (Exception e) { Log.Info("[conta] mudar nome: " + e.GetType().Name + ": " + e.Message); return (false, TextoGenerico); }
+    }
+
+    /// <summary>A sala difundiu outro nome para a minha conta (troca feita em outro aparelho): guarda e avisa. Só vale com a conta já nomeada.</summary>
+    public void AdotarNomeDaSala(string nome)
+    {
+        nome = (nome ?? "").Trim();
+        if (nome.Length == 0 || Nome == null || nome == Nome || !TemConta) return;
+        Nome = nome;
+        try { Persistir(); } catch (Exception e) { Log.Info("[conta] guardar nome: " + e.GetType().Name); }
+        NomeMudou?.Invoke();
+    }
+
     // ------------------------------------------------------------------ operações
 
     public async Task<ResultadoGrupo> CriarGrupoAsync(string nome, string apelido)
