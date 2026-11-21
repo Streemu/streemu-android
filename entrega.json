@@ -1,7 +1,7 @@
 {
-  "versao": "0.1.9",
-  "versionCode": 10,
-  "notas": "- Player: software só até 1080p, live nova volta ao pedido completo\n- Player: escada de recuo do decodificador e falha visível quando nenhum abre",
+  "versao": "0.1.10",
+  "versionCode": 11,
+  "notas": "- Player: escada de recuo roda de verdade quando o driver recusa",
   "obrigatoria": false,
-  "privado": "c9308312c2d68a62668d0323d720c08af4f534d3"
+  "privado": "6aef1e55008e70c662a0ed931610f283f221efb1"
 }

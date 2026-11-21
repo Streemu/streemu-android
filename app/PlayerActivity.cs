@@ -784,15 +784,16 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
             ["transmitindo"] = transmitindo, ["capacidade"] = _capacidade,
         });
         string titulo, detalhe;
-        if (transmitindo)
-        {
-            titulo = "Este celular não consegue mostrar o vídeo enquanto transmite.";
-            detalhe = "Pare a transmissão para assistir, ou baixe a qualidade dela. (" + erro + ")";
-        }
-        else if (_aguenta == Aparelho.Aguenta.Nao)
+        // a qualidade acima do que o aparelho declara vem antes: parar a transmissão não resolveria (ex.: 1440p num decodificador que vai até 1920x1920)
+        if (_aguenta == Aparelho.Aguenta.Nao)
         {
             titulo = $"Este celular não dá conta de {(_capacidade.Length > 0 ? _capacidade.Split(':')[0] : $"{f.Largura}x{f.Altura}")}.";
             detalhe = "Quem transmite pode baixar a qualidade no PC. (" + erro + ")";
+        }
+        else if (transmitindo)
+        {
+            titulo = "Este celular não consegue mostrar o vídeo enquanto transmite.";
+            detalhe = "Pare a transmissão para assistir, ou baixe a qualidade dela. (" + erro + ")";
         }
         else
         {

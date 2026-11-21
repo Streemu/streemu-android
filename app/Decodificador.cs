@@ -105,7 +105,21 @@ sealed class Decodificador : IDisposable
                 lock (_gate)
                 {
                     if (_descartado) return;
-                    if (!Configurar(sps, pps, out var falha))
+                    // a tela do player já foi liberada (o player está fechando ou foi para o fundo): não é falha do decodificador, só não há onde mostrar
+                    if (!_surface.IsValid) { Interlocked.Increment(ref DescartadosAteChave); return; }
+                    bool abriu;
+                    FalhaAbertura? falha;
+                    try { abriu = Configurar(sps, pps, out falha); }
+                    catch (Exception e)
+                    {
+                        // erro nosso no meio da escada (em 0.1.9 a formatação do código de erro lançava e a escada nunca passava do nível 0):
+                        // conta como falha definitiva, para não tentar de novo a cada quadro-chave sem nunca avisar
+                        Streemu.Util.Log.Info("ERRO: " + "abrir o decodificador: " + e);
+                        abriu = false;
+                        falha = new FalhaAbertura("inesperado", Nome, 0, 0, _nivel, ModoDoNivel(_nivel), e.GetType().Name, e.Message ?? "", null, "", false, false, ++_rodadasFalhas, "");
+                    }
+                    if (!abriu && !_surface.IsValid) { Interlocked.Increment(ref DescartadosAteChave); return; }   // a tela sumiu durante a tentativa
+                    if (!abriu)
                     {
                         // falha transitória ganha mais uma escada no próximo quadro-chave; as outras (e a segunda rodada) encerram
                         if (falha!.Transitorio && _rodadasFalhas < MaxRodadas) { Interlocked.Increment(ref DescartadosAteChave); return; }
@@ -217,7 +231,7 @@ sealed class Decodificador : IDisposable
             bool transitorio = false, recuperavel = false;
             if (e is MediaCodec.CodecException ce)
             {
-                codigo = $"0x{ce.ErrorCode:x8}"; diag = ce.DiagnosticInfo ?? ""; transitorio = ce.IsTransient; recuperavel = ce.IsRecoverable;
+                codigo = $"0x{(int)ce.ErrorCode:x8}";   // ErrorCode é enum: "x8" direto nele lança FormatException diag = ce.DiagnosticInfo ?? ""; transitorio = ce.IsTransient; recuperavel = ce.IsRecoverable;
                 Streemu.Util.Log.Info($"ERRO: decodificador {nomeCodec} {w}x{h} nível {nivel}, etapa {etapa}: CodecException ErrorCode {codigo}, DiagnosticInfo \"{diag}\", IsTransient {transitorio}, IsRecoverable {recuperavel}.");
             }
             else
