@@ -1,0 +1,215 @@
+name: Atualização Android
+
+on:
+  push:
+    branches: [main]
+    paths: ['entrega.json']
+  workflow_dispatch:
+    inputs:
+      pre_lancamento:
+        description: 'Publicar uma pré-release na branch teste-atualizacao'
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: atualizacao-android
+  cancel-in-progress: false
+
+jobs:
+  atualizar:
+    if: (github.ref == 'refs/heads/main' && !inputs.pre_lancamento) || (github.ref == 'refs/heads/teste-atualizacao' && inputs.pre_lancamento)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PRE_LANCAMENTO: ${{ inputs.pre_lancamento || false }}
+      NDK_VERSION: '28.2.13676358'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Selecionar o código da entrega
+        id: entrega
+        shell: pwsh
+        run: |
+          $commit = git log -1 --format=%H "origin/$env:GITHUB_REF_NAME" -- entrega.json
+          if ($LASTEXITCODE -ne 0 -or -not $commit) { throw 'Não há uma entrega nesta branch.' }
+          if ($commit -ne $env:GITHUB_SHA) {
+            if ($env:GITHUB_EVENT_NAME -eq 'push') {
+              Write-Host 'Uma entrega mais recente já está na branch main.'
+              return
+            }
+            throw 'Selecione uma branch cuja ponta seja a foto que gerou a entrega.'
+          }
+          git checkout --detach $commit
+          if ($LASTEXITCODE -ne 0) { throw 'Não consegui abrir a foto da entrega.' }
+          $e = Get-Content entrega.json -Raw -Encoding UTF8 | ConvertFrom-Json
+          if ($e.versionCode -isnot [ValueType] -or [string]$e.versionCode -notmatch '^[1-9][0-9]{0,9}$' -or
+              $e.versionCode -gt 2100000000 -or $e.versao -notmatch '^\d+\.\d+\.\d+$' -or
+              $e.obrigatoria -isnot [bool] -or $e.notas -isnot [string]) { throw 'entrega.json inválido.' }
+
+          $tag = if ($env:PRE_LANCAMENTO -eq 'true') { "teste-android-$($e.versionCode)" } else { "android-$($e.versionCode)" }
+          $existente = gh release view $tag --json isDraft,isPrerelease,assets 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $release = $existente | ConvertFrom-Json
+            if (!$release.isDraft) {
+              $faltam = @('Streemu-Android.apk', 'SHA256SUMS.txt', 'atualizacao.json') |
+                Where-Object { $_ -notin $release.assets.name }
+              if ($faltam -or $release.isPrerelease -ne ($env:PRE_LANCAMENTO -eq 'true') -or (git rev-list -n 1 $tag) -ne $commit) {
+                throw 'A tag publicada já existe com conteúdo diferente.'
+              }
+              Write-Host 'Esta entrega já foi publicada.'
+              return
+            }
+          }
+          if (git tag --list $tag) {
+            if ((git rev-list -n 1 $tag) -ne $commit) { throw 'A tag aponta para outra entrega.' }
+          }
+          "publicar=true" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "commit=$commit" >> $env:GITHUB_OUTPUT
+          $pacote = if ($env:PRE_LANCAMENTO -eq 'true') { 'br.com.streemu.atualizacaopreview' } else { 'br.com.streemu.proto' }
+          "pacote=$pacote" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        if: steps.entrega.outputs.publicar == 'true'
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Preparar Android e compilar SRT
+        if: steps.entrega.outputs.publicar == 'true'
+        shell: pwsh
+        run: |
+          $sdk = $env:ANDROID_HOME
+          $sdkmanager = Join-Path $sdk 'cmdline-tools/latest/bin/sdkmanager.bat'
+          if (!(Test-Path -LiteralPath $sdkmanager)) {
+            $sdkmanager = (Get-ChildItem -Path "$sdk/cmdline-tools/*/bin/sdkmanager.bat" | Select-Object -First 1).FullName
+          }
+          if (!$sdkmanager) { throw 'O SDK Manager do Android não está no runner.' }
+          & $sdkmanager "--sdk_root=$sdk" "platforms;android-36" "build-tools;36.0.0" "ndk;$env:NDK_VERSION" "cmake;3.22.1"
+          if ($LASTEXITCODE -ne 0) { throw 'Não consegui preparar o SDK do Android.' }
+          $env:PATH = "$(Join-Path $sdk 'cmake/3.22.1/bin');$env:PATH"
+          ./nativo/compilar-srt.ps1 -Ndk (Join-Path $sdk "ndk/$env:NDK_VERSION")
+          dotnet workload install android
+          if ($LASTEXITCODE -ne 0) { throw 'Não consegui instalar o workload Android.' }
+
+      - name: Compilar e assinar o APK universal
+        if: steps.entrega.outputs.publicar == 'true'
+        shell: pwsh
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STREEMU_ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          STREEMU_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          STREEMU_ANDROID_KEY_ALIAS: streemu-android
+          PACOTE: ${{ steps.entrega.outputs.pacote }}
+        run: |
+          if (!$env:KEYSTORE_BASE64 -or !$env:STREEMU_ANDROID_STORE_PASSWORD) { throw 'Configure os segredos de assinatura Android.' }
+          $env:STREEMU_ANDROID_KEYSTORE = Join-Path $env:RUNNER_TEMP 'streemu-release.p12'
+          [IO.File]::WriteAllBytes($env:STREEMU_ANDROID_KEYSTORE, [Convert]::FromBase64String($env:KEYSTORE_BASE64))
+          Remove-Item Env:KEYSTORE_BASE64
+          $e = Get-Content entrega.json -Raw -Encoding UTF8 | ConvertFrom-Json
+          dotnet publish app/Streemu.Proto.csproj -c Release -o apk "-p:ApplicationId=$env:PACOTE" "-p:ApplicationVersion=$($e.versionCode)" "-p:ApplicationDisplayVersion=$($e.versao)" "-p:AndroidSdkDirectory=$env:ANDROID_HOME"
+          if ($LASTEXITCODE -ne 0) { throw 'A compilação ou assinatura falhou.' }
+
+      - name: Apagar o keystore
+        if: always()
+        shell: pwsh
+        run: |
+          $key = Join-Path $env:RUNNER_TEMP 'streemu-release.p12'
+          if (Test-Path -LiteralPath $key) { Remove-Item -LiteralPath $key -Force }
+
+      - name: Conferir o APK e preparar a release
+        if: steps.entrega.outputs.publicar == 'true'
+        env:
+          TAG: ${{ steps.entrega.outputs.tag }}
+          PACOTE: ${{ steps.entrega.outputs.pacote }}
+        shell: pwsh
+        run: |
+          $e = Get-Content entrega.json -Raw -Encoding UTF8 | ConvertFrom-Json
+          $arquivos = @(Get-ChildItem -LiteralPath apk -Filter '*-Signed.apk')
+          if ($arquivos.Count -ne 1) { throw 'Esperava um único APK assinado.' }
+          New-Item -ItemType Directory -Force pub | Out-Null
+          $apk = 'pub/Streemu-Android.apk'
+          Copy-Item -LiteralPath $arquivos[0].FullName -Destination $apk
+          $tools = Join-Path $env:ANDROID_HOME 'build-tools/36.0.0'
+          & (Join-Path $tools 'apksigner.bat') verify $apk
+          if ($LASTEXITCODE -ne 0) { throw 'A assinatura do APK é inválida.' }
+          $info = & (Join-Path $tools 'aapt.exe') dump badging $apk
+          if ($LASTEXITCODE -ne 0 -or
+              $info[0] -notlike "package: name='$env:PACOTE' versionCode='$($e.versionCode)' versionName='$($e.versao)'*" -or
+              -not ($info -match "native-code:.*'arm64-v8a'") -or -not ($info -match "native-code:.*'armeabi-v7a'")) {
+            throw 'O APK não corresponde à entrega ou não é universal.'
+          }
+          $zip = [IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $apk).Path)
+          try {
+            foreach ($abi in 'arm64-v8a', 'armeabi-v7a') {
+              if (!$zip.GetEntry("lib/$abi/libsrt.so")) { throw "O APK não contém libsrt.so para $abi." }
+            }
+          } finally { $zip.Dispose() }
+
+          $sha = (Get-FileHash -LiteralPath $apk -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$sha  Streemu-Android.apk" | Set-Content -Encoding ascii pub/SHA256SUMS.txt
+          [ordered]@{
+            versionCode = $e.versionCode
+            versao = $e.versao
+            notas = $e.notas
+            obrigatoria = $e.obrigatoria
+            url = "https://github.com/Streemu/streemu-android/releases/download/$env:TAG/Streemu-Android.apk"
+            sha256 = $sha
+            tamanho = (Get-Item -LiteralPath $apk).Length
+          } | ConvertTo-Json | Set-Content -Encoding utf8 pub/atualizacao.json
+          $notas = $e.notas
+          if ($env:PRE_LANCAMENTO -eq 'true') {
+            $notas = "APK de teste. Esta pré-release é instalada separadamente do Streemu de distribuição." + [Environment]::NewLine * 2 + $notas
+          }
+          $notas | Set-Content -Encoding utf8 pub/notas.md
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: steps.entrega.outputs.publicar == 'true'
+        with:
+          subject-path: pub/Streemu-Android.apk
+
+      - name: Publicar a release com os três arquivos
+        if: steps.entrega.outputs.publicar == 'true'
+        env:
+          TAG: ${{ steps.entrega.outputs.tag }}
+          COMMIT: ${{ steps.entrega.outputs.commit }}
+        shell: pwsh
+        run: |
+          $info = Get-Content pub/atualizacao.json -Raw -Encoding UTF8 | ConvertFrom-Json
+          $arquivos = @('pub/Streemu-Android.apk', 'pub/SHA256SUMS.txt', 'pub/atualizacao.json')
+          $previa = $env:PRE_LANCAMENTO -eq 'true'
+          $release = gh release view $env:TAG --json isDraft,targetCommitish 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $rascunho = $release | ConvertFrom-Json
+            if (!$rascunho.isDraft -or $rascunho.targetCommitish -ne $env:COMMIT) {
+              throw 'A release existente não é um rascunho desta entrega.'
+            }
+            gh release upload $env:TAG @arquivos --clobber
+          } else {
+            gh release create $env:TAG @arquivos --draft --latest=false --target $env:COMMIT --title "Streemu Android $($info.versao)" --notes-file pub/notas.md
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Não consegui preparar os arquivos no rascunho.' }
+          $dados = gh release view $env:TAG --json isDraft,assets
+          if ($LASTEXITCODE -ne 0) { throw 'Não consegui conferir o rascunho.' }
+          $dados = $dados | ConvertFrom-Json
+          foreach ($arquivo in $arquivos) {
+            $nome = Split-Path -Leaf $arquivo
+            $asset = $dados.assets | Where-Object { $_.name -eq $nome -and $_.state -eq 'uploaded' }
+            if (!$dados.isDraft -or $asset.size -ne (Get-Item -LiteralPath $arquivo).Length) { throw "Arquivo ausente ou incompleto: $nome" }
+          }
+          if ($previa) {
+            gh release edit $env:TAG --draft=false --prerelease --latest=false
+          } else {
+            gh release edit $env:TAG --draft=false --latest
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Não consegui publicar a release.' }
+
