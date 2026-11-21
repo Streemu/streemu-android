@@ -9,6 +9,7 @@ using Android.Net;
 using Android.Views;
 using Android.Widget;
 using Streemu.Net;
+using Streemu.Proto.Transmissao;
 using Streemu.Proto.Ui;
 using LogApp = Streemu.Util.Log;
 using Logcat = Android.Util.Log;
@@ -471,12 +472,16 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
             {
                 ["qualidade"] = _qualidade, ["resultado"] = _aguenta switch { Aparelho.Aguenta.Sim => "aguenta", Aparelho.Aguenta.Nao => "nao_aguenta", _ => "nao_sei" }, ["detalhe"] = detalhe,
             });
-            if (_aguenta != Aparelho.Aguenta.Nao) return;
-            string texto = $"Este celular não promete {q.H}p a {q.Fps} quadros. A imagem pode travar; quem transmite pode baixar a qualidade no PC.";
+            // transmitir do celular ocupa o decodificador/encoder de hardware: avisa antes, mas não bloqueia (em muitos aparelhos funciona)
+            bool transmitindo = ServicoTransmissao.AoVivo;
+            bool naoAguenta = _aguenta == Aparelho.Aguenta.Nao;
+            if (!naoAguenta && !transmitindo) return;
+            string texto = naoAguenta ? $"Este celular não promete {q.H}p a {q.Fps} quadros. A imagem pode travar; quem transmite pode baixar a qualidade no PC." : "";
+            if (transmitindo) texto += (texto.Length > 0 ? " " : "") + "Transmitir e assistir ao mesmo tempo pode não funcionar neste celular.";
             Ui(() =>
             {
                 _aviso.Text = texto; _aviso.Visibility = ViewStates.Visible;
-                _avisoVideo.Text = $"Este celular pode não dar conta de {q.H}p{q.Fps}";
+                if (naoAguenta) _avisoVideo.Text = $"Este celular pode não dar conta de {q.H}p{q.Fps}";
             });
         });
     }
@@ -593,11 +598,11 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
     }
 
     /// <summary>Fecha a ligação atual; com <paramref name="avisar"/>, manda "parar" para quem transmite (como o Windows faz quando o player fecha).</summary>
-    void EncerrarLigacao(bool avisar)
+    void EncerrarLigacao(bool avisar, string? motivo = null)
     {
         var link = Interlocked.Exchange(ref _link, null);
         if (link == null) return;
-        FimDaLive(avisar ? "pedido_de_novo" : "fim");
+        FimDaLive(motivo ?? (avisar ? "pedido_de_novo" : "fim"));
         if (avisar && Sessao.Sala is { } sala) _ = sala.SendTo(link.PeerId, new JsonObject { ["tipo"] = "parar", ["sessao"] = link.SessionId });
         if (_tunel == link.Tunnel) { _tunel = null; _relay = null; }
         // depois que o SRT largar o relay: fechar agora faria o laço tentar o relay morto, que é o que ele já faz ao perder a conexão
@@ -687,6 +692,7 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
     void LacoSrt()
     {
         var buf = new byte[1500];
+        Tunnel? tunelDoDec = null;   // a ligação que o decodificador de agora já viu: uma diferente é live nova
         while (!_fechando)
         {
             int u = Srt.Erro;
@@ -699,7 +705,11 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
                 lock (_midia)
                 {
                     if (_fechando) break;
+                    // um decodificador que desistiu não volta a abrir: o "Tentar de novo" cria outro (a tela já foi reaproveitada pelo codec liberado)
+                    if (_dec is { Desistiu: true } velho) { _dec = null; _ = Task.Run(() => { try { velho.Dispose(); } catch { } }); }
                     _dec ??= CriarDecodificador();
+                    // live nova (não um SRT reaberto na mesma ligação): o modo reduzido da live anterior não vale para esta
+                    if (tunel != tunelDoDec) { _dec.RecomecarCompleto(); tunelDoDec = tunel; }
                 }
                 u = Srt.Conectar(relay.Port, tunel.Passphrase, LatenciaMs);
                 Streemu.Util.Log.Info("SRT conectado.");
@@ -714,7 +724,12 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
                             || e.Contains("again", StringComparison.OrdinalIgnoreCase)) continue;
                         throw new InvalidOperationException("SRT recv: " + e);
                     }
-                    _demux.Alimentar(buf.AsSpan(0, n));
+                    try { _demux.Alimentar(buf.AsSpan(0, n)); }
+                    catch (Exception e)
+                    {
+                        // erro do processamento de mídia (demux, decodificador, som): o SRT está bem, então não derruba nem reabre a ligação
+                        Streemu.Util.Log.Info("ERRO: mídia: " + e);
+                    }
                 }
             }
             catch (Exception e) { Streemu.Util.Log.Info("AVISO: " + e.Message + " (reabrindo em 1 s)"); Thread.Sleep(1000); }
@@ -738,15 +753,54 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
             {
                 ["lado"] = "viewer", ["ligacao"] = _ligacaoTel, ["tentativa"] = $"{_ligacaoTel}-{_tentativaMidia}", ["numero"] = _tentativaMidia,
                 ["gatilho"] = _tentativaMidia == 1 ? "inicio" : "outro", ["decodificador"] = "mediacodec", ["codec"] = "h264", ["nome"] = d.Nome,
+                ["modo"] = d.Nivel >= 1 ? d.Modo : null,
                 ["chaves_do_fabricante"] = d.ChavesDoFabricante, ["renderizador"] = "surface", ["resolucao"] = $"{w}x{h}",
             });
         };
         d.Chegou += (pts, us) => { if (Atraso(pts, us) is double ms) _atrasoChegada.Add(ms); };
         d.NaTela += (pts, us) => { Tocando(); if (Atraso(pts, us) is double ms) _atrasoTela.Add(ms); };
+        d.NaoAbriu += f => AoNaoAbrir(d, f);
         _demux.Quadro = d.Entregar;
         // o som abre no primeiro pacote de áudio, quando a PMT já disse quantos canais são
         _demux.Audio = (pes, pts) => ObterSom()?.Entregar(pes, pts);
         return d;
+    }
+
+    /// <summary>
+    /// Nenhum decodificador abriu (vem da thread do SRT, depois de a escada de recuo acabar). Mostra o erro com "Tentar de novo" e encerra a ligação
+    /// (EncerrarLigacao avisa quem transmite): o SRT em si não falhou, mas sem decodificador receber bytes só gasta rede e bateria. Ao zerar o túnel o
+    /// laço do SRT sai do recebimento e espera a ligação seguinte, onde recria o decodificador (o que desistiu é descartado).
+    /// </summary>
+    void AoNaoAbrir(Decodificador d, Decodificador.FalhaAbertura f)
+    {
+        if (_fechando || _dec != d) return;
+        bool transmitindo = ServicoTransmissao.AoVivo;
+        string erro = f.CodigoHex ?? f.Tipo;
+        Telemetria.Evento("midia_falha", new JsonObject
+        {
+            ["lado"] = "viewer", ["ligacao"] = _ligacaoTel, ["tentativa"] = $"{_ligacaoTel}-{_tentativaMidia + 1}", ["etapa"] = f.Etapa,
+            ["codec"] = f.Codec, ["nome"] = f.Codec, ["nivel"] = f.Nivel, ["modo"] = f.Modo, ["resolucao"] = $"{f.Largura}x{f.Altura}", ["erro"] = erro,
+            ["diagnostico"] = f.Diagnostico.Length > 0 ? f.Diagnostico : f.Mensagem, ["transitorio"] = f.Transitorio, ["niveis_tentados"] = f.Tentativas,
+            ["transmitindo"] = transmitindo, ["capacidade"] = _capacidade,
+        });
+        string titulo, detalhe;
+        if (transmitindo)
+        {
+            titulo = "Este celular não consegue mostrar o vídeo enquanto transmite.";
+            detalhe = "Pare a transmissão para assistir, ou baixe a qualidade dela. (" + erro + ")";
+        }
+        else if (_aguenta == Aparelho.Aguenta.Nao)
+        {
+            titulo = $"Este celular não dá conta de {(_capacidade.Length > 0 ? _capacidade.Split(':')[0] : $"{f.Largura}x{f.Altura}")}.";
+            detalhe = "Quem transmite pode baixar a qualidade no PC. (" + erro + ")";
+        }
+        else
+        {
+            titulo = "Não deu para abrir o vídeo.";
+            detalhe = "Código " + erro + ".";
+        }
+        Esperando(titulo, detalhe, erro: true);   // antes de EncerrarLigacao: o evento "falha" leva o id da ligação, que o live_fim apaga
+        EncerrarLigacao(avisar: true, motivo: "decodificador");
     }
 
     Som? ObterSom()
@@ -814,6 +868,7 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
                        (d == null ? "" : $"\n{_videoW}x{_videoH} {fps:0} quadros/s  {d.Nome}  decodificar {d.MsNoDecodificador:0.0} ms") +
                        (_som is { } som ? $"\nsom: fila {som.NaFilaMs:0} ms (mín. {som.MinimoNaFilaMs:0}), {som.Faltas} faltas, maior intervalo {som.MaiorIntervaloMs:0} ms" : "");
             if (_capacidade.Length > 0) s += $"\ndecodificador para {_capacidade}";
+            if (d is { Modo.Length: > 0 }) s += $"\nmodo do decodificador: {d.Modo}";
             if (d is { ChavesDoFabricante.Length: > 0 }) s += $"\nbaixa latência do fabricante: {d.ChavesDoFabricante}";
             var tela = _atrasoTela.Janela();
             if (tela != null) s += $"\natraso até a tela {tela}";

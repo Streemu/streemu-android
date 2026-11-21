@@ -54,17 +54,72 @@ sealed class Decodificador : IDisposable
         Streemu.Util.Log.Info($"Relógio: Tunnel.NowUs - nanoTime/1000 = {_nanoParaTunelUs} µs.");
     }
 
+    /// <summary>O que se sabe da falha de abertura: onde parou, qual decodificador, e o que o Android respondeu.</summary>
+    public sealed record FalhaAbertura(string Etapa, string Codec, int Largura, int Altura, int Nivel, string Modo, string Tipo, string Mensagem,
+                                       string? CodigoHex, string Diagnostico, bool Transitorio, bool Recuperavel, int Rodadas, string Tentativas);
+
+    /// <summary>Nenhum nível de recuo abriu (nem na segunda rodada, se a falha parecia transitória). Depois disto o decodificador não aceita mais quadros.</summary>
+    public event Action<FalhaAbertura>? NaoAbriu;
+    public bool Desistiu => _desistiu;
+    volatile bool _desistiu;
+
+    /// <summary>Como o decodificador abriu: "hardware", "hardware_sem_tempo_real" ou "software" (vazio antes de abrir).</summary>
+    public string Modo { get; private set; } = "";
+    /// <summary>Nível de recuo que funcionou por último (0 = pedido completo). A próxima troca de SPS começa dele, em vez de falhar de novo nos níveis de cima.</summary>
+    public int Nivel => _nivel;
+    int _nivel;
+    int _rodadasFalhas;   // escadas completas que falharam desde a última abertura que deu certo
+    const int MaxRodadas = 2;
+
+    static readonly string[] NomesSoftware = ["c2.android.avc.decoder", "OMX.google.h264.decoder"];
+    const long MaxPixelsSoftware = 1920L * 1088;   // 1080p (o SPS de 1080p costuma vir com 1088 linhas antes do recorte)
+    volatile bool _reabrir;
+
+    /// <summary>
+    /// Live nova: se o decodificador está num nível de recuo, reabre no pedido completo no próximo quadro-chave. Sem isto, quem só abriu sem tempo real
+    /// enquanto transmitia continuava assim (com mais atraso) nas lives seguintes, mesmo depois de parar a transmissão. Chamar da thread que chama Entregar.
+    /// </summary>
+    public void RecomecarCompleto()
+    {
+        if (_nivel == 0 || _desistiu) return;
+        Streemu.Util.Log.Info($"Decodificador: live nova, voltando do modo {Modo} para o pedido completo.");
+        _nivel = 0; _rodadasFalhas = 0;
+        _reabrir = true;
+        _esperandoChave = true;
+    }
+    static string ModoDoNivel(int nivel) => nivel switch { 0 => "hardware", 1 => "hardware_sem_tempo_real", _ => "software" };
+
     public void Entregar(byte[] au, long pts90k)
     {
         if (_descartado) return;
         Interlocked.Increment(ref Entregues);
+        if (_desistiu) return;
         Chegou?.Invoke(pts90k, Streemu.Net.Tunnel.NowUs);
         if (_esperandoChave)
         {
             var (sps, pps, idr) = Nals(au);
             if (!idr || sps == null || pps == null) { Interlocked.Increment(ref DescartadosAteChave); return; }
-            if (_vida == null || (_sps != null && !sps.AsSpan().SequenceEqual(_sps)))
-                lock (_gate) { if (_descartado) return; Configurar(sps, pps); }
+            if (_vida == null || _reabrir || (_sps != null && !sps.AsSpan().SequenceEqual(_sps)))
+            {
+                FalhaAbertura? desistiu = null;
+                lock (_gate)
+                {
+                    if (_descartado) return;
+                    if (!Configurar(sps, pps, out var falha))
+                    {
+                        // falha transitória ganha mais uma escada no próximo quadro-chave; as outras (e a segunda rodada) encerram
+                        if (falha!.Transitorio && _rodadasFalhas < MaxRodadas) { Interlocked.Increment(ref DescartadosAteChave); return; }
+                        _desistiu = true;
+                        desistiu = falha;
+                    }
+                }
+                // fora do _gate: quem assina pode mexer na tela e na ligação
+                if (desistiu != null)
+                {
+                    try { NaoAbriu?.Invoke(desistiu); } catch (Exception e) { Streemu.Util.Log.Info("ERRO: " + "aviso de decodificador que não abriu: " + e.Message); }
+                    return;
+                }
+            }
             _esperandoChave = false;
         }
         if (_vida is not { } vida) return;
@@ -77,46 +132,104 @@ sealed class Decodificador : IDisposable
         }
     }
 
-    /// <summary>Sob _gate: troca o decodificador. Quem chama já conferiu que não foi descartado.</summary>
-    void Configurar(byte[] sps, byte[] pps)
+    /// <summary>
+    /// Sob _gate: troca o decodificador, descendo a escada de recuo a partir do último nível que funcionou. Nunca lança: devolve false com a última falha.
+    /// Nível 0: o pedido completo (baixa latência, prioridade 0, chaves do fabricante). Nível 1: o mesmo decodificador de hardware sem o que pede "tempo
+    /// real" (no Moto G42 com a própria transmissão ativa o driver Qualcomm recusa uma segunda sessão assim, ERROR_UNSUPPORTED). Nível 2: por software.
+    /// </summary>
+    bool Configurar(byte[] sps, byte[] pps, out FalhaAbertura? falha)
     {
         Parar();
-        _sps = sps;
+        _sps = null;
+        _reabrir = false;
         var (w, h) = TamanhoDoSps(sps);
-        var fmt = MediaFormat.CreateVideoFormat(MediaFormat.MimetypeVideoAvc, w, h);
-        fmt.SetByteBuffer("csd-0", ByteBuffer.Wrap(sps));
-        fmt.SetByteBuffer("csd-1", ByteBuffer.Wrap(pps));
-        if (OperatingSystem.IsAndroidVersionAtLeast(30)) fmt.SetInteger(MediaFormat.KeyLowLatency, 1);
-        fmt.SetInteger(MediaFormat.KeyPriority, 0);   // tempo real
-        fmt.SetInteger(MediaFormat.KeyMaxInputSize, 4 << 20);   // quadro-chave de 1440p/4K com bitrate alto passa do padrão de alguns fabricantes
-        var codec = MediaCodec.CreateDecoderByType(MediaFormat.MimetypeVideoAvc);
+        var tentativas = new List<string>();
+        falha = null;
+        for (int nivel = _nivel; nivel <= 2; nivel++)
+        {
+            // por software, acima de 1080p o celular abre mas não acompanha (vídeo quase parado): melhor a mensagem de que não dá conta
+            if (nivel == 2 && (long)w * h > MaxPixelsSoftware) { tentativas.Add($"2:pulado ({w}x{h} acima de 1080p)"); continue; }
+            foreach (var nome in nivel == 2 ? NomesSoftware : new string?[] { null })
+            {
+                var codec = TentarAbrir(nivel, nome, sps, pps, w, h, out falha, out string chaves);
+                tentativas.Add($"{nivel}:{(falha == null ? "ok" : falha.Etapa + " " + (falha.CodigoHex ?? falha.Tipo))}");
+                if (codec == null) continue;
+                _sps = sps; _nivel = nivel; _rodadasFalhas = 0;
+                Modo = ModoDoNivel(nivel);
+                ChavesDoFabricante = chaves;
+                var vida = new Vida(codec);
+                Streemu.Util.Log.Info($"Decodificador {Nome}: {w}x{h}, modo {Modo} (nível {nivel}), baixa latência do Android {(nivel > 0 ? "não pedida" : OperatingSystem.IsAndroidVersionAtLeast(30) ? "pedida" : "indisponível (antes do Android 11)")}, " +
+                                      $"do fabricante: {(chaves.Length > 0 ? chaves : "nenhuma")}.");
+                Tamanho?.Invoke(w, h);
+                vida.Entrada = new Thread(() => LacoEntrada(vida)) { IsBackground = true, Name = "dec-entrada" };
+                vida.Saida = new Thread(() => LacoSaida(vida)) { IsBackground = true, Name = "dec-saida" };
+                _vida = vida;
+                vida.Entrada.Start();
+                vida.Saida.Start();
+                falha = null;
+                return true;
+            }
+        }
+        _rodadasFalhas++;
+        // já estava em software e o SPS novo passou de 1080p: nenhuma tentativa rodou
+        falha ??= new FalhaAbertura("pulado", "", w, h, 2, ModoDoNivel(2), "AcimaDoLimiteDoSoftware", $"{w}x{h} acima de 1080p por software", null, "", false, false, 0, "");
+        falha = falha with { Rodadas = _rodadasFalhas, Tentativas = string.Join("; ", tentativas) };
+        Streemu.Util.Log.Info($"ERRO: nenhum nível abriu o decodificador ({falha.Tentativas}); rodada {_rodadasFalhas} de {MaxRodadas}{(falha.Transitorio ? ", falha transitória" : "")}.");
+        return false;
+    }
+
+    /// <summary>Uma tentativa (um nível, um decodificador). Em qualquer falha libera o codec, registra a etapa e devolve null.</summary>
+    MediaCodec? TentarAbrir(int nivel, string? nomeFixo, byte[] sps, byte[] pps, int w, int h, out FalhaAbertura? falha, out string chaves)
+    {
+        string etapa = "create", nomeCodec = nomeFixo ?? "";
+        MediaCodec? codec = null;
+        chaves = "";
+        falha = null;
         try
         {
-            Nome = codec.Name;
-            ChavesDoFabricante = ChavesDeBaixaLatencia(fmt, Nome);
+            var fmt = MediaFormat.CreateVideoFormat(MediaFormat.MimetypeVideoAvc, w, h);
+            fmt.SetByteBuffer("csd-0", ByteBuffer.Wrap(sps));
+            fmt.SetByteBuffer("csd-1", ByteBuffer.Wrap(pps));
+            if (nivel == 0)
+            {
+                if (OperatingSystem.IsAndroidVersionAtLeast(30)) fmt.SetInteger(MediaFormat.KeyLowLatency, 1);
+                fmt.SetInteger(MediaFormat.KeyPriority, 0);   // tempo real
+            }
+            fmt.SetInteger(MediaFormat.KeyMaxInputSize, 4 << 20);   // quadro-chave de 1440p/4K com bitrate alto passa do padrão de alguns fabricantes
+            codec = nomeFixo != null ? MediaCodec.CreateByCodecName(nomeFixo) : MediaCodec.CreateDecoderByType(MediaFormat.MimetypeVideoAvc);
+            nomeCodec = codec.Name;
+            Nome = nomeCodec;
+            if (nivel == 0) chaves = ChavesDeBaixaLatencia(fmt, nomeCodec);
+            etapa = "configure";
             codec.Configure(fmt, _surface, null, MediaCodecConfigFlags.None);
             // aviso de "quadro foi para a tela" numa thread própria (precisa de Looper)
             if (_threadAvisos == null) { _threadAvisos = new Android.OS.HandlerThread("dec-avisos"); _threadAvisos.Start(); }
             codec.SetOnFrameRenderedListener(new AvisoDeTela(this), new Android.OS.Handler(_threadAvisos.Looper!));
+            etapa = "start";
             codec.Start();
+            return codec;
         }
-        catch
+        catch (Exception e)
         {
             // SPS absurdo ou decodificador recusou: sem isto, cada nova tentativa vazava um MediaCodec
-            _sps = null;
-            try { codec.Release(); } catch { }
-            codec.Dispose();
-            throw;
+            if (codec != null) { try { codec.Release(); } catch { } codec.Dispose(); }
+            string? codigo = null; string diag = "", tipo = e.GetType().Name;
+            bool transitorio = false, recuperavel = false;
+            if (e is MediaCodec.CodecException ce)
+            {
+                codigo = $"0x{ce.ErrorCode:x8}"; diag = ce.DiagnosticInfo ?? ""; transitorio = ce.IsTransient; recuperavel = ce.IsRecoverable;
+                Streemu.Util.Log.Info($"ERRO: decodificador {nomeCodec} {w}x{h} nível {nivel}, etapa {etapa}: CodecException ErrorCode {codigo}, DiagnosticInfo \"{diag}\", IsTransient {transitorio}, IsRecoverable {recuperavel}.");
+            }
+            else
+            {
+                // o Android costuma devolver o código só no texto ("... 0xfffffc0e"): guarda para a telemetria
+                var m = System.Text.RegularExpressions.Regex.Match(e.Message ?? "", "0x[0-9a-fA-F]{8}");
+                if (m.Success) codigo = m.Value.ToLowerInvariant();
+                Streemu.Util.Log.Info($"ERRO: decodificador {nomeCodec} {w}x{h} nível {nivel}, etapa {etapa}: {tipo}: {e.Message}");
+            }
+            falha = new FalhaAbertura(etapa, nomeCodec, w, h, nivel, ModoDoNivel(nivel), tipo, e.Message ?? "", codigo, diag, transitorio, recuperavel, 0, "");
+            return null;
         }
-        var vida = new Vida(codec);
-        Streemu.Util.Log.Info($"Decodificador {Nome}: {w}x{h}, baixa latência do Android {(OperatingSystem.IsAndroidVersionAtLeast(30) ? "pedida" : "indisponível (antes do Android 11)")}, " +
-                                         $"do fabricante: {(ChavesDoFabricante.Length > 0 ? ChavesDoFabricante : "nenhuma conhecida")}.");
-        Tamanho?.Invoke(w, h);
-        vida.Entrada = new Thread(() => LacoEntrada(vida)) { IsBackground = true, Name = "dec-entrada" };
-        vida.Saida = new Thread(() => LacoSaida(vida)) { IsBackground = true, Name = "dec-saida" };
-        _vida = vida;
-        vida.Entrada.Start();
-        vida.Saida.Start();
     }
 
     /// <summary>

@@ -1,7 +1,7 @@
 {
-  "versao": "0.1.8",
-  "versionCode": 9,
-  "notas": "- Android: adicionar controles de rotação e proporção ao player",
+  "versao": "0.1.9",
+  "versionCode": 10,
+  "notas": "- Player: software só até 1080p, live nova volta ao pedido completo\n- Player: escada de recuo do decodificador e falha visível quando nenhum abre",
   "obrigatoria": false,
-  "privado": "2c002546b845ea2950d5c71a3f4608ca1fd85d34"
+  "privado": "c9308312c2d68a62668d0323d720c08af4f534d3"
 }
