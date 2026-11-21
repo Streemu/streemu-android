@@ -54,6 +54,8 @@ static class Telas
         var col = Tema.Coluna(c);
         int m = Margem(c);
         col.SetPadding(m, 0, m, m);
+        if (Atualizacao.Disponivel is { } nova) col.AddView(AvisoDaAtualizacao(c, nova));
+        if (Atualizacao.BloqueiaSala) return Rolagem(c, col);
         if (!Telemetria.Respondido) col.AddView(AvisoDoDiagnostico(c));
         if (sala is not { Connected: true } && sala?.Members.Count is null or 0) { col.AddView(EsperandoSala(c, sala)); return Rolagem(c, col); }
 
@@ -83,6 +85,37 @@ static class Telas
             linha!.AddView(CartaoDeLive(c, lives[i], assistir), lp);
         }
         return Rolagem(c, col);
+    }
+
+    internal static View AvisoDaAtualizacao(Context c, VersaoDisponivel nova)
+    {
+        var cartao = Tema.Coluna(c);
+        cartao.Background = Tema.Forma(c, Tema.Selecionado, 16);
+        cartao.SetPadding(Tema.Dp(c, 16), Tema.Dp(c, 14), Tema.Dp(c, 16), Tema.Dp(c, 12));
+        cartao.LayoutParameters = new LinearLayout.LayoutParams(Tema.Cheio, Tema.Ajusta) { TopMargin = Tema.Dp(c, 12) };
+        cartao.AddView(Tema.Texto(c, $"Versão nova · {nova.Versao}", 16, negrito: true));
+        if (nova.Obrigatoria)
+            cartao.AddView(Tema.Texto(c, "Atualize para entrar na sala do grupo.", 14, Tema.DestaqueSuave));
+        if (!string.IsNullOrWhiteSpace(nova.Notas))
+        {
+            var notas = Tema.Texto(c, nova.Notas, 14, Tema.TextoApagado);
+            notas.SetPadding(0, Tema.Dp(c, 8), 0, Tema.Dp(c, 10));
+            cartao.AddView(notas);
+        }
+        var botoes = Tema.Linha(c, GravityFlags.CenterVertical | GravityFlags.End);
+        if (!nova.Obrigatoria)
+        {
+            var depois = Tema.Botao(c, "Depois", principal: false);
+            depois.Enabled = Atualizacao.PodeAdiar;
+            depois.Click += (_, _) => Atualizacao.Depois();
+            botoes.AddView(depois);
+        }
+        var atualizar = Tema.Botao(c, Atualizacao.Rotulo);
+        atualizar.Enabled = !Atualizacao.Ocupado;
+        atualizar.Click += (_, _) => Atualizacao.Atualizar();
+        botoes.AddView(atualizar, new LinearLayout.LayoutParams(Tema.Ajusta, Tema.Ajusta) { LeftMargin = Tema.Dp(c, 8) });
+        cartao.AddView(botoes);
+        return cartao;
     }
 
     /// <summary>
@@ -230,6 +263,11 @@ static class Telas
         var col = Tema.Coluna(c);
         int m = Margem(c);
         col.SetPadding(m, 0, m, m);
+        if (Atualizacao.BloqueiaSala && Atualizacao.Disponivel is { } nova)
+        {
+            col.AddView(AvisoDaAtualizacao(c, nova));
+            return Rolagem(c, col);
+        }
         if (sala is not { Connected: true } && sala?.Members.Count is null or 0) { col.AddView(EsperandoSala(c, sala)); return Rolagem(c, col); }
 
         var online = sala!.Friends.OrderByDescending(f => f.Live != null).ThenBy(f => f.Nick, StringComparer.CurrentCultureIgnoreCase).ToList();
@@ -402,7 +440,11 @@ static class Telas
 
         col.AddView(TituloDeSecao(c, "Sobre"));
         var sobre = Cartao(c);
-        sobre.AddView(LinhaSimples(c, "Streemu para Android · protótipo\nAssiste às lives do grupo com vídeo e som, direto do PC de quem transmite."));
+        sobre.AddView(LinhaSimples(c, $"Streemu para Android · {Atualizacao.VersaoInstalada}"));
+        var procurar = Tema.Botao(c, "Procurar atualização", principal: false);
+        procurar.Enabled = !Atualizacao.Ocupado;
+        procurar.Click += (_, _) => Atualizacao.Verificar(manual: true);
+        sobre.AddView(procurar);
         col.AddView(sobre);
 
         var sairB = Tema.Botao(c, "Sair da conta", principal: false);

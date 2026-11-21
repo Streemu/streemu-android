@@ -9,14 +9,28 @@
     <RootNamespace>Streemu.Proto</RootNamespace>
     <ApplicationId>br.com.streemu.proto</ApplicationId>
     <ApplicationTitle>Streemu</ApplicationTitle>
-    <ApplicationVersion>1</ApplicationVersion>
-    <ApplicationDisplayVersion>0.1</ApplicationDisplayVersion>
+    <ApplicationVersion Condition="'$(ApplicationVersion)' == ''">1</ApplicationVersion>
+    <ApplicationDisplayVersion Condition="'$(ApplicationDisplayVersion)' == ''">0.1</ApplicationDisplayVersion>
     <!-- arm64 e também 32 bits (armeabi-v7a): celulares de entrada com Android Go ou sistema de 32 bits só instalam com ele.
          O libsrt de cada um sai do nativo/compilar-srt.ps1 -Abis arm64-v8a,armeabi-v7a -->
     <RuntimeIdentifiers>android-arm64;android-arm</RuntimeIdentifiers>
-    <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <AndroidPackageFormats>apk</AndroidPackageFormats>
+    <AndroidCreatePackagePerAbi>false</AndroidCreatePackagePerAbi>
     <TrimMode>full</TrimMode>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <AndroidKeyStore>true</AndroidKeyStore>
+    <AndroidSigningKeyStore>$(STREEMU_ANDROID_KEYSTORE)</AndroidSigningKeyStore>
+    <AndroidSigningKeyAlias>$(STREEMU_ANDROID_KEY_ALIAS)</AndroidSigningKeyAlias>
+    <AndroidSigningStorePass>env:STREEMU_ANDROID_STORE_PASSWORD</AndroidSigningStorePass>
+    <AndroidSigningKeyPass>env:STREEMU_ANDROID_KEY_PASSWORD</AndroidSigningKeyPass>
+  </PropertyGroup>
+  <Target Name="VerificarAssinaturaRelease" BeforeTargets="PrepareForBuild" Condition="'$(Configuration)' == 'Release'">
+    <Error Condition="!Exists('$(STREEMU_ANDROID_KEYSTORE)') Or '$(STREEMU_ANDROID_KEY_ALIAS)' == ''"
+           Text="Configure o keystore e o alias da assinatura Android de Release." />
+    <Error Condition="'$(STREEMU_ANDROID_STORE_PASSWORD)' == '' Or '$(STREEMU_ANDROID_KEY_PASSWORD)' == ''"
+           Text="Configure as senhas da assinatura Android de Release no ambiente." />
+  </Target>
   <!-- JDK e SDK do Android Studio nos lugares padrão, quando não vierem de fora (-p:JavaSdkDirectory=... / -p:AndroidSdkDirectory=...) -->
   <PropertyGroup>
     <JavaSdkDirectory Condition="'$(JavaSdkDirectory)' == '' And Exists('$(ProgramW6432)\Android\Android Studio\jbr\bin\java.exe')">$(ProgramW6432)\Android\Android Studio\jbr</JavaSdkDirectory>

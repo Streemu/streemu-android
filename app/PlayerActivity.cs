@@ -68,12 +68,17 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
     bool _videoOkTel;
     int _tentativaMidia;
     Rede? _redeCallback;
+    bool _playerIniciado;
 
     public PlayerActivity() { _esconder = new Java.Lang.Runnable(() => Controles(false)); }
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+        Atualizacao.Iniciar(this);
+        if (Atualizacao.BloqueiaSala) { Finish(); return; }
+        _playerIniciado = true;
+        Atualizacao.PlayerAbriu();
         Window!.AddFlags(WindowManagerFlags.KeepScreenOn);
         if (OperatingSystem.IsAndroidVersionAtLeast(28)) Window.Attributes!.LayoutInDisplayCutoutMode = LayoutInDisplayCutoutMode.ShortEdges;
         Telemetria.Ativo = true;
@@ -691,6 +696,7 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
 
     protected override void OnDestroy()
     {
+        if (!_playerIniciado) { base.OnDestroy(); return; }
         _fechando = true;
         _ui.RemoveCallbacks(_esconder);
         Sessao.Mensagem -= AoReceber;
@@ -706,6 +712,7 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
         _som?.Dispose();
         link?.Dispose();
         if (_codigoTeste != null) { _tunel?.Dispose(); _relay?.Dispose(); }
+        Atualizacao.PlayerFechou();
         base.OnDestroy();
     }
 

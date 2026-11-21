@@ -16,7 +16,7 @@ static class Sessao
     public static GroupRoom? Sala { get; private set; }
     public static string? GrupoId { get; private set; }
     static ISharedPreferences _prefs = null!;
-    static bool _iniciada;
+    public static bool Iniciada { get; private set; }
 
     /// <summary>A conta, a sala, a lista de amigos, uma miniatura ou um avatar mudou.</summary>
     public static event Action? Mudou;
@@ -26,13 +26,15 @@ static class Sessao
 
     public static void Iniciar(Context c)
     {
-        if (_iniciada) return;
-        _iniciada = true;
+        if (Iniciada) return;
+        Atualizacao.Iniciar(c);
+        Iniciada = true;
         _prefs = c.GetSharedPreferences("streemu", FileCreationMode.Private)!;
         Streemu.Util.Log.Line += l => Android.Util.Log.Info("Streemu", l);
         Conta = new ContaLeve(System.IO.Path.Combine(c.FilesDir!.AbsolutePath, "conta.json"), "celular (protótipo)", Cofre.Cifrar, Cofre.Abrir);
         RelayConfig.Token = () => Conta.AcessoAsync();
         Telemetria.Iniciar(c, forcar => Conta.AcessoAsync(forcar), () => Conta.TemConta ? Conta.Servidor : null, () => Apelido);
+        Atualizacao.RegistrarResultadoPendente();
         // os dados do aparelho uma vez por abertura (logcat e log.txt da telemetria); o perfil completo vai no perfil-<hash>.json
         Streemu.Util.Log.Info("APARELHO " + Aparelho.Resumo(c));
         if (Conta.TemConta) AbrirSala(_prefs.GetString("grupo", null));
@@ -57,6 +59,7 @@ static class Sessao
     /// <summary>Abre a sala do grupo (o último usado, se ainda for da conta; senão o primeiro).</summary>
     public static void AbrirSala(string? grupoId)
     {
+        if (Atualizacao.BloqueiaSala) return;
         var gs = Conta.Grupos;
         if (grupoId == null || gs.All(g => g.Id != grupoId)) grupoId = gs.FirstOrDefault()?.Id;
         if (grupoId == GrupoId && Sala != null) return;
@@ -71,6 +74,14 @@ static class Sessao
         sala.Undeliverable += (para, msg) => NaoEntregue?.Invoke(para, msg);
         sala.Encerrada += _ => Avisar();
         Sala = sala;
+        Avisar();
+    }
+
+    public static void AplicarBloqueioDeAtualizacao()
+    {
+        if (!Iniciada) return;
+        if (Atualizacao.BloqueiaSala) FecharSala();
+        else if (Sala == null && Conta.TemConta) AbrirSala(_prefs.GetString("grupo", null));
         Avisar();
     }
 
