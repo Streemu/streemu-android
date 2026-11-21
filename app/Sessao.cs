@@ -128,6 +128,33 @@ static class Sessao
     /// <summary>Quem mudou algo que a tela mostra fora da sala (a lista de grupos da conta, depois de criar, entrar ou sair) avisa por aqui.</summary>
     public static void Avisar() => Mudou?.Invoke();
 
+    // ------------------------------------------------------------------ papel e tamanho dos grupos (aba Grupos)
+
+    static IReadOnlyDictionary<string, DetalheDoGrupo> _detalhes = new Dictionary<string, DetalheDoGrupo>();
+    static int _pedindoDetalhes;
+
+    /// <summary>O papel e o tamanho do grupo, se o servidor já respondeu. Ex.: <c>Sessao.Detalhe(g.Id)?.Dono</c></summary>
+    public static DetalheDoGrupo? Detalhe(string grupoId) => _detalhes.GetValueOrDefault(grupoId);
+
+    /// <summary>
+    /// Pede ao servidor o papel e o tamanho de cada grupo da conta (o <c>GET /conta</c> pergunta a cada sala, então só ao entrar na aba Grupos).
+    /// Um pedido por vez; se falhar, fica o que havia. Ex.: <c>Sessao.PedirDetalhesDosGrupos();</c>
+    /// </summary>
+    public static void PedirDetalhesDosGrupos()
+    {
+        if (Interlocked.Exchange(ref _pedindoDetalhes, 1) == 1) return;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                if (await Conta.DetalhesDosGruposAsync() is not { } d) return;
+                _detalhes = d;
+                Avisar();
+            }
+            finally { Volatile.Write(ref _pedindoDetalhes, 0); }
+        });
+    }
+
     // ------------------------------------------------------------------ imagens: miniaturas das lives e avatares
 
     static readonly object _gate = new();

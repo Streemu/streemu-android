@@ -19,6 +19,7 @@ static class Tema
     public static readonly Color Campo = Color.ParseColor("#25213A");      // surface-input
     public static readonly Color Barra = Color.ParseColor("#171523");      // title-bar: barras de navegação
     public static readonly Color Borda = Color.ParseColor("#4B4463");      // card-border
+    public static readonly Color Fio = Color.Argb(115, 0x4B, 0x44, 0x63);   // card-border a 45%: o fio sob a barra de cima, mais discreto que uma borda
     public static readonly Color CorTexto = Color.ParseColor("#F4F0FA");
     public static readonly Color TextoApagado = Color.ParseColor("#C5BADB");
     public static readonly Color Destaque = Color.ParseColor("#7C62DC");   // accent: a ação principal

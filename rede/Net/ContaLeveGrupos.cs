@@ -13,6 +13,9 @@ namespace Streemu.Net;
 /// </summary>
 public sealed record ResultadoGrupo(bool Ok, string? Erro = null, string? Texto = null, string? Id = null, string? Nome = null, string? Convite = null, string? Papel = null);
 
+/// <summary>Papel e tamanho de um grupo da conta, do <c>GET /conta</c>. <see cref="Membros"/> nulo se o servidor não mandou.</summary>
+public sealed record DetalheDoGrupo(bool Dono, int? Membros);
+
 /// <summary>
 /// Operações de grupo da conta no celular (as mesmas do app Windows, <c>ContaGrupos.cs</c>): criar, entrar por convite, sair e ver o convite.
 /// Nenhum método daqui lança: falha de rede, disco ou resposta estranha do servidor vira <see cref="ResultadoGrupo"/> com uma frase.
@@ -270,5 +273,24 @@ public sealed partial class ContaLeve
                 Convite: JsonSeguro.Texto(j["convite"]));
         }
         catch (Exception e) { return FalhaInesperada(e); }
+    }
+
+    /// <summary>
+    /// O papel e o tamanho de cada grupo da conta, pelo <c>GET /conta</c> (o <c>/conta/renovar</c> só traz id e nome). O servidor pergunta a cada
+    /// sala, então é mais lento que a lista. Nulo se falhou: quem mostra fica só com os nomes. Ex.: <c>var d = await conta.DetalhesDosGruposAsync();</c>
+    /// </summary>
+    public async Task<IReadOnlyDictionary<string, DetalheDoGrupo>?> DetalhesDosGruposAsync()
+    {
+        try
+        {
+            var (st, j, texto) = await ChamarComTokenAsync(HttpMethod.Get, "/conta", null);
+            if (texto != null || st != HttpStatusCode.OK || j?["grupos"] is not JsonArray gs) return null;
+            var r = new Dictionary<string, DetalheDoGrupo>();
+            foreach (var g in gs.OfType<JsonObject>())
+                if (JsonSeguro.Texto(g["id"]) is { } id)
+                    r[id] = new DetalheDoGrupo(JsonSeguro.Texto(g["papel"]) == "dono", JsonSeguro.Inteiro(g["membros"]) is { } n and >= 0 and <= 1000 ? (int)n : null);
+            return r;
+        }
+        catch (Exception e) { Log.Info("[conta] detalhes dos grupos: " + e.GetType().Name); return null; }
     }
 }

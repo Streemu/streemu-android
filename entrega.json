@@ -1,7 +1,7 @@
 {
-  "versao": "0.1.12",
-  "versionCode": 13,
-  "notas": "- Nome da conta no Android (spec 027)",
+  "versao": "0.1.13",
+  "versionCode": 14,
+  "notas": "- Espelho: tira o nome privado de um comentário da barra de cima\n- Aba Grupos no layout do mockup, com papel e tamanho de cada grupo\n- Barra de cima escura com o logo, e o seletor de grupo no Início\n- Início com \"Sua sala\", amigos online e cartão compacto de transmitir\n- Coluna lateral cabe deitado: itens de 64 dp e rolagem\n- Navegação com cinco abas: Início, Grupos, Cinema, Arquivos e Mais\n- Divide Telas.cs e MainActivity.cs por assunto, sem mudar comportamento",
   "obrigatoria": false,
-  "privado": "dc31083f9929159775541c7e2a51451f3773d780"
+  "privado": "d88eeb0e589c6eec428f7facda9d208ddd619633"
 }

@@ -27,6 +27,7 @@ salvar(reduzir("mumu-controle.png", 520), "drawable-nodpi", "mumu_controle.webp"
 salvar(reduzir("mumu-dormindo.png", 400), "drawable-nodpi", "mumu_dormindo.webp")
 salvar(reduzir("mumu-pipoca.png", 400), "drawable-nodpi", "mumu_pipoca.webp")
 salvar(reduzir("gato.png", 192), "drawable-nodpi", "gato.webp")
+salvar(reduzir("logo.png", 480), "drawable-nodpi", "logo.webp")   # a barra de cima: 30 dp de altura, ~150 dp de largura
 
 # ícone adaptativo: 108 dp de lado, área segura de 66 dp no centro
 gato = Image.open(os.path.join(arte, "gato.png")).convert("RGBA")

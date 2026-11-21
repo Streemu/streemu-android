@@ -12,8 +12,8 @@ using Logcat = Android.Util.Log;
 namespace Streemu.Proto;
 
 /// <summary>
-/// A tela principal. Sem conta: a entrada (navegador + código de 6 dígitos). Com conta: o Início, com três abas: Ao vivo (as lives do grupo, com
-/// miniatura), Grupo (quem está online, offline e a atividade recente) e Conta. A navegação fica embaixo no celular em pé e vira uma barra lateral em
+/// A tela principal. Sem conta: a entrada (navegador + código de 6 dígitos). Com conta: cinco abas (spec 002): Início (as lives do grupo, com
+/// miniatura), Grupos, Cinema e Arquivos ("em breve" até existirem) e Mais. A navegação fica embaixo no celular em pé e vira uma barra lateral em
 /// tela larga (600 dp ou mais: celular deitado, dobrável aberto, tablet), onde a lista de lives também ganha colunas.
 /// No build Debug, abrir com "--es codigo X" (testar-no-celular.ps1) vai direto para o player no modo de código, sem sala.
 /// </summary>
@@ -23,16 +23,14 @@ namespace Streemu.Proto;
 [IntentFilter(new[] { Intent.ActionView }, Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable }, DataScheme = "streemu", DataHost = "grupo")]
 [IntentFilter(new[] { Intent.ActionView }, Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable }, AutoVerify = true,
               DataScheme = "https", DataHost = "www.streemu.com.br", DataPathPrefix = "/g/")]
-public class MainActivity : Android.App.Activity
+public partial class MainActivity : Android.App.Activity
 {
-    enum Aba { AoVivo, Grupo, Conta }
+    enum Aba { Inicio, Grupos, Cinema, Arquivos, Mais }
 
     FrameLayout _raiz = null!, _conteudo = null!;
-    Aba _aba = Aba.AoVivo;
+    Aba _aba = Aba.Inicio;
     bool _redesenhoMarcado, _visivel;
     readonly List<(Aba Aba, LinearLayout Item)> _botoesNav = new();
-    TextView _grupoNome = null!, _salaEstado = null!;
-    View _salaPonto = null!;
     ScrollView? _telaAtual;
     Aba _abaDaTela;
     Timer? _miniaturas;
@@ -57,7 +55,7 @@ public class MainActivity : Android.App.Activity
         Sessao.Iniciar(this, aguardarAtualizacao: Atualizacao.DeveVerificarAoAbrir);
         // o link do convite vem só na primeira criação: girar a tela ou voltar pelo Recentes reentrega o mesmo Intent
         if (savedInstanceState == null && (Intent == null || (Intent.Flags & ActivityFlags.LaunchedFromHistory) == 0)) Convites.Receber(this, Intent);
-        _aba = (Aba)(savedInstanceState?.GetInt("aba") ?? 0);
+        _aba = AbaSalva(savedInstanceState);
         _esperandoCodigo = savedInstanceState?.GetBoolean("esperando") ?? false;
         Janela.BordaABorda(this);
         _raiz = new FrameLayout(this);
@@ -83,7 +81,7 @@ public class MainActivity : Android.App.Activity
     /// <summary>Do convite aceito: a aba Ao vivo, onde o grupo novo aparece.</summary>
     internal void IrParaAoVivo()
     {
-        _aba = Aba.AoVivo;
+        _aba = Aba.Inicio;
         if (!_mostrandoInicio) return;
         MostrarAba();
         Sessao.PedirMiniaturas(true);
@@ -92,7 +90,7 @@ public class MainActivity : Android.App.Activity
     protected override void OnSaveInstanceState(Bundle outState)
     {
         base.OnSaveInstanceState(outState);
-        outState.PutInt("aba", (int)_aba);
+        outState.PutString(ChaveDaAba, _aba.ToString());
         outState.PutBoolean("esperando", _esperandoCodigo);
     }
 
@@ -105,7 +103,7 @@ public class MainActivity : Android.App.Activity
         ServicoTransmissao.Mudou += MarcarRedesenho;
         Atualizacao.Mudou += RedesenharAtualizacao;
         // a miniatura de cada live: o PC manda a cada ~8 s enquanto alguém pede; pedir de novo a cada 20 s mantém o pedido vivo
-        _miniaturas = new Timer(_ => { if (_aba == Aba.AoVivo) Sessao.PedirMiniaturas(true); }, null, 500, 20_000);
+        _miniaturas = new Timer(_ => { if (_aba == Aba.Inicio) Sessao.PedirMiniaturas(true); }, null, 500, 20_000);
         MarcarRedesenho();
     }
 
@@ -137,7 +135,7 @@ public class MainActivity : Android.App.Activity
 
     internal void MostrarAtualizacao()
     {
-        _aba = Aba.AoVivo;
+        _aba = Aba.Inicio;
         RedesenharAtualizacao();
         _telaAtual?.ScrollTo(0, 0);
     }
@@ -163,6 +161,7 @@ public class MainActivity : Android.App.Activity
     void Montar()
     {
         _raiz.RemoveAllViews();
+        _raiz.SetBackgroundColor(Tema.Fundo);   // o Início troca pela cor das barras
         _botoesNav.Clear();
         _codigo = null; _erroEntrada = null; _telaAtual = null;
         _atualizacaoNaEntrada = null;
@@ -316,274 +315,11 @@ public class MainActivity : Android.App.Activity
     void MostrarTeclado(View v) => v.PostDelayed(() => (GetSystemService(InputMethodService) as InputMethodManager)?.ShowSoftInput(v, ShowFlags.Implicit), 150);
     void EsconderTeclado() => (GetSystemService(InputMethodService) as InputMethodManager)?.HideSoftInputFromWindow(_raiz.WindowToken, HideSoftInputFlags.None);
 
-    // ================================================================================================ Início
-
-    void MontarInicio()
-    {
-        bool larga = Tema.LarguraDp(this) >= 600;
-        _conteudo = new FrameLayout(this);
-        var coluna = Tema.Coluna(this);
-        coluna.AddView(BarraDeCima(), Tema.Lp(Tema.Cheio, Tema.Dp(this, 64)));
-        coluna.AddView(_conteudo, Tema.Lp(Tema.Cheio, 0, 1));
-        if (larga)
-        {
-            var linha = Tema.Linha(this, GravityFlags.Top);
-            linha.AddView(Navegacao(vertical: true), Tema.Lp(Tema.Dp(this, 88), Tema.Cheio));
-            linha.AddView(coluna, Tema.Lp(0, Tema.Cheio, 1));
-            _raiz.AddView(linha);
-        }
-        else
-        {
-            coluna.AddView(Navegacao(vertical: false), Tema.Lp(Tema.Cheio, Tema.Dp(this, 72)));
-            _raiz.AddView(coluna);
-        }
-        AtualizarBarra();
-        MostrarAba();
-    }
-
-    View BarraDeCima()
-    {
-        var barra = Tema.Linha(this);
-        barra.SetPadding(Tema.Dp(this, 16), 0, Tema.Dp(this, 16), 0);
-        var gato = new ImageView(this);
-        gato.SetImageResource(Resource.Drawable.gato);
-        barra.AddView(gato, Tema.Lp(Tema.Dp(this, 36), Tema.Dp(this, 36)));
-
-        // o grupo é o contexto de tudo: um toque troca (menu com os grupos da conta)
-        var seletor = Tema.Linha(this);
-        seletor.SetPadding(Tema.Dp(this, 14), 0, Tema.Dp(this, 8), 0);
-        seletor.SetMinimumHeight(Tema.Dp(this, 44));
-        seletor.Background = Tema.Tocavel(this, Tema.Cartao, 22);
-        seletor.Clickable = true;
-        seletor.ContentDescription = "Trocar de grupo";
-        _grupoNome = Tema.Texto(this, "", 17, negrito: true);
-        _grupoNome.SetMaxLines(1);
-        _grupoNome.Ellipsize = Android.Text.TextUtils.TruncateAt.End;
-        seletor.AddView(_grupoNome, Tema.Lp(Tema.Ajusta, Tema.Ajusta));
-        seletor.AddView(Tema.Icone(this, Resource.Drawable.ic_abrir, Tema.TextoApagado, 22));
-        seletor.Click += (_, _) => EscolherGrupo(seletor);
-        var lpSel = Tema.Lp(0, Tema.Ajusta, 1);
-        lpSel.LeftMargin = Tema.Dp(this, 10);
-        lpSel.RightMargin = Tema.Dp(this, 12);
-        // o seletor ocupa o que sobra, mas encolhe para caber o nome (não estica até a borda)
-        var envelope = Tema.Linha(this);
-        envelope.AddView(seletor, Tema.Lp(Tema.Ajusta, Tema.Ajusta));
-        barra.AddView(envelope, lpSel);
-
-        _salaPonto = new View(this);
-        barra.AddView(_salaPonto, Tema.Lp(Tema.Dp(this, 8), Tema.Dp(this, 8)));
-        _salaEstado = Tema.Texto(this, "", 13, Tema.TextoApagado);
-        var lpEst = Tema.Lp(Tema.Ajusta, Tema.Ajusta);
-        lpEst.LeftMargin = Tema.Dp(this, 6);
-        barra.AddView(_salaEstado, lpEst);
-        return barra;
-    }
-
-    void AtualizarBarra()
-    {
-        _grupoNome.Text = Sessao.NomeDoGrupo is { Length: > 0 } n ? n : "Sem grupo";
-        var sala = Sessao.Sala;
-        bool ok = sala?.Connected == true;
-        _salaPonto.Background = Tema.Forma(this, ok ? Tema.Ok : Tema.Aviso, 4);
-        _salaPonto.Visibility = sala == null ? ViewStates.Gone : ViewStates.Visible;
-        _salaEstado.Text = sala == null ? "" : ok ? $"{sala.Friends.Count()} online" : "Conectando";
-    }
-
-    void EscolherGrupo(View ancora)
-    {
-        if (Atualizacao.BloqueiaSala) { MostrarAtualizacao(); return; }
-        var gs = Sessao.Conta.Grupos;
-        if (gs.Count == 0) return;
-        var menu = new PopupMenu(this, ancora);
-        for (int i = 0; i < gs.Count; i++) menu.Menu!.Add(0, i, i, gs[i].Nome)!.SetCheckable(true)!.SetChecked(gs[i].Id == Sessao.GrupoId);
-        menu.Menu!.SetGroupCheckable(0, true, true);
-        menu.MenuItemClick += (_, e) => Sessao.AbrirSala(gs[e.Item!.ItemId].Id);
-        menu.Show();
-    }
-
-    View Navegacao(bool vertical)
-    {
-        var nav = vertical ? Tema.Coluna(this) : Tema.Linha(this);
-        nav.SetBackgroundColor(Tema.Barra);
-        nav.SetGravity(vertical ? GravityFlags.CenterHorizontal | GravityFlags.Top : GravityFlags.Center);
-        if (vertical) nav.SetPadding(0, Tema.Dp(this, 12), 0, 0);
-        foreach (var (aba, icone, nome) in new[] { (Aba.AoVivo, Resource.Drawable.ic_ao_vivo, "Ao vivo"), (Aba.Grupo, Resource.Drawable.ic_grupo, "Grupo"), (Aba.Conta, Resource.Drawable.ic_conta, "Conta") })
-        {
-            var item = Tema.Coluna(this);
-            item.SetGravity(GravityFlags.Center);
-            item.Clickable = true;
-            item.ContentDescription = nome;
-            // o ícone da aba atual fica dentro de uma pílula: a convenção de navegação do Android
-            var pilula = new FrameLayout(this);
-            pilula.AddView(Tema.Icone(this, icone, Tema.TextoApagado), new FrameLayout.LayoutParams(Tema.Dp(this, 24), Tema.Dp(this, 24), GravityFlags.Center));
-            item.AddView(pilula, Tema.Lp(Tema.Dp(this, 60), Tema.Dp(this, 32)));
-            var rotulo = Tema.Texto(this, nome, 12, Tema.TextoApagado, negrito: true);
-            var lpR = Tema.Lp(Tema.Ajusta, Tema.Ajusta);
-            lpR.TopMargin = Tema.Dp(this, 4);
-            item.AddView(rotulo, lpR);
-            item.Background = Tema.Tocavel(this, Color.Transparent, 16);
-            item.Click += (_, _) =>
-            {
-                if (_aba == aba) { _telaAtual?.SmoothScrollTo(0, 0); return; }   // tocar na aba atual volta ao topo
-                _aba = aba;
-                MostrarAba();
-                Sessao.PedirMiniaturas(aba == Aba.AoVivo);
-            };
-            nav.AddView(item, vertical ? Tema.Lp(Tema.Cheio, Tema.Dp(this, 76)) : Tema.Lp(0, Tema.Cheio, 1));
-            _botoesNav.Add((aba, item));
-        }
-        return nav;
-    }
-
-    void MostrarAba()
-    {
-        foreach (var (aba, item) in _botoesNav)
-        {
-            bool atual = aba == _aba;
-            var pilula = (FrameLayout)item.GetChildAt(0)!;
-            pilula.Background = atual ? Tema.Forma(this, Tema.Selecionado, 16) : null;
-            ((ImageView)pilula.GetChildAt(0)!).ImageTintList = Android.Content.Res.ColorStateList.ValueOf(atual ? Tema.DestaqueSuave : Tema.TextoApagado);
-            ((TextView)item.GetChildAt(1)!).SetTextColor(atual ? Tema.CorTexto : Tema.TextoApagado);
-            item.Selected = atual;
-        }
-        int rolagem = _telaAtual != null && _abaDaTela == _aba ? _telaAtual.ScrollY : 0;
-        _conteudo.RemoveAllViews();
-        _telaAtual = _aba switch
-        {
-            Aba.AoVivo => Telas.AoVivo(this, Assistir, () => Convites.PedirCriacao(this), () => Convites.PedirConvite(this),
-                                       Transmitir, ServicoTransmissao.Parar, i => { Qualidade.Escolher(this, i); MarcarRedesenho(); }),
-            Aba.Grupo => Telas.Grupo(this, Assistir, () => Convites.PedirCriacao(this), () => Convites.PedirConvite(this),
-                                     g => Convites.Convidar(this, g), g => Convites.ConfirmarSaidaDoGrupo(this, g)),
-            _ => Telas.Conta(this, TrocarApelido, ConfirmarSaida),
-        };
-        _abaDaTela = _aba;
-        _conteudo.AddView(_telaAtual);
-        // redesenho na mesma aba (chegou uma miniatura, alguém entrou): a rolagem fica onde estava
-        if (rolagem > 0) { var t = _telaAtual; t.Post(() => t.ScrollTo(0, rolagem)); }
-    }
-
     /// <summary>Saindo do app pelo voltar (não é rotação nem o Android pausando): fecha a sessão do diagnóstico.</summary>
     protected override void OnDestroy()
     {
         if (_raiz != null && IsFinishing) Telemetria.Fechar();
         Convites.Fechar();
         base.OnDestroy();
-    }
-
-    // ================================================================================================ transmitir a tela
-
-    const int CodigoPermissoes = 41, CodigoProjecao = 42;
-
-    /// <summary>
-    /// "Transmitir a tela": primeiro as permissões (notificação no Android 13+, que o serviço em primeiro plano usa; áudio, que é opcional: sem ele a live sai só com imagem),
-    /// depois o pedido do Android para capturar a tela, e no resultado o serviço começa. A resposta das permissões não bloqueia nada: a captura segue com o que foi dado.
-    /// </summary>
-    void Transmitir()
-    {
-        if (Atualizacao.BloqueiaSala) { MostrarAtualizacao(); return; }
-        if (Sessao.Sala is not { Connected: true }) { Toast.MakeText(this, "Conecte-se ao grupo para transmitir.", ToastLength.Long)?.Show(); return; }
-        if (ServicoTransmissao.AoVivo || ServicoTransmissao.Preparando) return;
-        var faltam = new List<string>();
-        if (OperatingSystem.IsAndroidVersionAtLeast(33) && CheckSelfPermission("android.permission.POST_NOTIFICATIONS") != Permission.Granted) faltam.Add("android.permission.POST_NOTIFICATIONS");
-        if (CheckSelfPermission("android.permission.RECORD_AUDIO") != Permission.Granted) faltam.Add("android.permission.RECORD_AUDIO");
-        if (faltam.Count > 0) RequestPermissions(faltam.ToArray(), CodigoPermissoes);
-        else PedirProjecao();
-    }
-
-    public override void OnRequestPermissionsResult(int requestCode, string[] permissions, Permission[] grantResults)
-    {
-        base.OnRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == CodigoPermissoes) PedirProjecao();
-    }
-
-    void PedirProjecao()
-    {
-        try
-        {
-            var gerente = (Android.Media.Projection.MediaProjectionManager)GetSystemService(MediaProjectionService)!;
-            StartActivityForResult(gerente.CreateScreenCaptureIntent(), CodigoProjecao);
-        }
-        catch (Exception e) { Toast.MakeText(this, "Não deu para pedir a captura da tela: " + e.Message, ToastLength.Long)?.Show(); }
-    }
-
-    protected override void OnActivityResult(int requestCode, Result resultCode, Intent? data)
-    {
-        base.OnActivityResult(requestCode, resultCode, data);
-        if (requestCode != CodigoProjecao) return;
-        if (resultCode != Result.Ok || data == null) { Toast.MakeText(this, "A captura da tela não foi permitida.", ToastLength.Short)?.Show(); return; }
-        bool audio = CheckSelfPermission("android.permission.RECORD_AUDIO") == Permission.Granted;
-        ServicoTransmissao.Iniciar(this, (int)resultCode, data, Qualidade.IndiceEscolhido(this), audio);
-    }
-
-    void Assistir(Member m)
-    {
-        if (Atualizacao.BloqueiaSala) { MostrarAtualizacao(); return; }
-        if (m.Live == null) return;
-        StartActivity(new Intent(this, typeof(PlayerActivity))
-            .PutExtra("conta", m.Id).PutExtra("apelido", m.Nick).PutExtra("sala", m.Live.StreamId)
-            .PutExtra("jogo", m.Live.Game).PutExtra("qualidade", m.Live.Quality).PutExtra("desde", m.Live.SinceUnixMs));
-    }
-
-    /// <summary>"Mudar nome da conta" (aba Conta): grava pelo servidor, e a troca vale em todos os aparelhos.</summary>
-    void TrocarApelido() => PedirNome("Mudar nome da conta", "É como os amigos veem você em todos os aparelhos.", Sessao.Apelido);
-
-    /// <summary>Conta sem nome depois do renovar: o diálogo "Escolha seu nome", uma vez só.</summary>
-    void OferecerNomeSeFaltar()
-    {
-        if (_dialogoNome || !Sessao.PrecisaEscolherNome) return;
-        Sessao.NomeOferecido();
-        PedirNome("Escolha seu nome", "É como os amigos veem você em todos os aparelhos.", Sessao.SugestaoDeNome);
-    }
-
-    bool _dialogoNome;
-
-    void PedirNome(string titulo, string texto, string inicial)
-    {
-        _dialogoNome = true;
-        var campo = new EditText(this) { Text = inicial };
-        campo.SetFilters(new Android.Text.IInputFilter[] { new Android.Text.InputFilterLengthFilter(ContaLeve.NomeMaximo) });
-        campo.SetSelectAllOnFocus(true);
-        campo.SetSingleLine(true);
-        var erro = Tema.Texto(this, "", 14, Tema.Erro);
-        erro.Visibility = ViewStates.Gone;
-        var coluna = Tema.Coluna(this);
-        coluna.SetPadding(Tema.Dp(this, 22), Tema.Dp(this, 8), Tema.Dp(this, 22), 0);
-        coluna.AddView(campo);
-        coluna.AddView(erro);
-        var dialogo = new Android.App.AlertDialog.Builder(this, Android.Resource.Style.ThemeDeviceDefaultDialogAlert)!
-            .SetTitle(titulo)!
-            .SetMessage(texto)!
-            .SetView(coluna)!
-            .SetPositiveButton("Salvar", (IDialogInterfaceOnClickListener?)null)!
-            .SetNegativeButton("Cancelar", (_, _) => { })!
-            .Create()!;
-        dialogo.DismissEvent += (_, _) => _dialogoNome = false;
-        dialogo.Show();
-        // o botão é religado à mão: com erro ou sem rede o diálogo fica aberto e o texto digitado não se perde
-        var salvar = dialogo.GetButton((int)DialogButtonType.Positive)!;
-        salvar.Click += async (_, _) =>
-        {
-            var nome = campo.Text?.Trim() ?? "";
-            if (nome.Length == 0) { erro.Text = "Escreva um nome."; erro.Visibility = ViewStates.Visible; return; }
-            if (nome == Sessao.Conta.Nome) { dialogo.Dismiss(); return; }
-            salvar.Enabled = false;
-            var (ok, aviso) = await Sessao.Conta.MudarNomeAsync(nome);
-            if (ok) { dialogo.Dismiss(); Toast.MakeText(this, "Seu nome agora é " + (Sessao.Conta.Nome ?? nome) + ".", ToastLength.Short)?.Show(); return; }
-            salvar.Enabled = true;
-            erro.Text = aviso ?? "Não deu certo. Tente de novo.";
-            erro.Visibility = ViewStates.Visible;
-        };
-        campo.RequestFocus();
-        MostrarTeclado(campo);
-    }
-
-    void ConfirmarSaida()
-    {
-        new Android.App.AlertDialog.Builder(this, Android.Resource.Style.ThemeDeviceDefaultDialogAlert)!
-            .SetTitle("Sair da conta?")!
-            .SetMessage("Este celular deixa de ser um dispositivo da sua conta Streemu. Para voltar, é só entrar de novo.")!
-            .SetPositiveButton("Sair", (_, _) => _ = Sessao.SairDaContaAsync())!
-            .SetNegativeButton("Cancelar", (_, _) => { })!
-            .Show();
     }
 }
