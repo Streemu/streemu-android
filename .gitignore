@@ -4,3 +4,6 @@ obj/
 .vs/
 nativo/fontes/
 nativo/obj/
+*.p12
+*.jks
+*.keystore
