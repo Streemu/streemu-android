@@ -1,7 +1,7 @@
 {
-  "versao": "0.1.5",
-  "versionCode": 6,
-  "notas": "- Android: fechar o player sem vazar nem travar, e mais travas de rede",
+  "versao": "0.1.6",
+  "versionCode": 7,
+  "notas": "- Android: criar grupo, convidar e entrar pelo link de convite",
   "obrigatoria": false,
-  "privado": "ddf7f90d6b39716a8d719d55b68cc8f755f07d96"
+  "privado": "dd62489d82c04158c355b365e11f9f0f0f2b0195"
 }

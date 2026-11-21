@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
+using Streemu.Util;
 
 namespace Streemu.Net;
 
@@ -13,7 +14,7 @@ public sealed record GrupoDaConta(string Id, string Nome);
 /// Cada um é um dispositivo próprio da conta (<paramref name="apelido"/>). Quem chama decide como cifrar o segredo: DPAPI no Windows, Android Keystore no celular.
 /// O arquivo guarda servidor, conta, dispositivo e o segredo cifrado. Nenhum texto de erro leva segredo, verificador nem código.
 /// </summary>
-public sealed class ContaLeve
+public sealed partial class ContaLeve
 {
     readonly string _arquivo, _apelido;
     readonly Func<byte[], byte[]> _cifrar, _abrir;
@@ -115,11 +116,12 @@ public sealed class ContaLeve
 
     void Guardar(JsonObject j)
     {
-        lock (_gate) { _acesso = j["acesso"]?.GetValue<string>(); _acessoExpira = j["expira"]?.GetValue<long>() ?? 0; }
-        ContaId = j["conta"]?.GetValue<string>() ?? ContaId;
+        lock (_gate) { _acesso = JsonSeguro.Texto(j["acesso"]); _acessoExpira = JsonSeguro.Inteiro(j["expira"]) ?? 0; }
+        ContaId = JsonSeguro.Texto(j["conta"]) ?? ContaId;
+        // a lista de grupos vem do servidor e muda quando a pessoa cria, entra ou sai: tipo errado vira item ignorado, nunca exceção
         if (j["grupos"] is JsonArray gs)
-            Grupos = gs.OfType<JsonObject>().Where(g => g["id"] != null)
-                .Select(g => new GrupoDaConta(g["id"]!.GetValue<string>(), g["nome"]?.GetValue<string>() ?? "")).ToList();
+            Grupos = gs.OfType<JsonObject>().Where(g => JsonSeguro.Texto(g["id"]) is { Length: > 0 })
+                .Select(g => new GrupoDaConta(JsonSeguro.Texto(g["id"])!, JsonSeguro.Texto(g["nome"]) ?? "")).ToList();
         Directory.CreateDirectory(Path.GetDirectoryName(_arquivo)!);
         File.WriteAllText(_arquivo, new JsonObject
         {

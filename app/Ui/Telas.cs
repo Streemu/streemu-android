@@ -31,8 +31,19 @@ static class Telas
     }
 
     /// <summary>A sala ainda não conectou (ou caiu e está voltando): o motivo em uma linha, com um indicador de espera.</summary>
-    static View EsperandoSala(Context c, GroupRoom? sala)
+    static View EsperandoSala(Context c, GroupRoom? sala, Action? criar = null, Action? entrar = null)
     {
+        // conta sem nenhum grupo: não há o que esperar. É a primeira tela de quem acabou de entrar, então já oferece criar ou entrar
+        if (sala == null && !Sessao.AguardandoAtualizacao && Sessao.Conta.Grupos.Count == 0)
+        {
+            if (criar == null || entrar == null) return Vazio(c, Resource.Drawable.mumu_dormindo, "Você ainda não está em um grupo", "Crie um grupo ou entre com um convite na aba Grupo.");
+            var vazio = Vazio(c, Resource.Drawable.mumu_dormindo, "Você ainda não está em um grupo", "Crie um grupo ou entre com um convite.");
+            var botoes = BotoesDeGrupo(c, criar, entrar, vertical: true);
+            var lpB = Tema.Lp(Tema.Dp(c, Math.Min(320, Tema.LarguraDp(c) - 48)), Tema.Ajusta);
+            lpB.TopMargin = Tema.Dp(c, 20);
+            ((LinearLayout)vazio).AddView(botoes, lpB);
+            return vazio;
+        }
         var col = Tema.Coluna(c);
         col.SetGravity(GravityFlags.Center);
         col.SetPadding(Tema.Dp(c, 32), Tema.Dp(c, 64), Tema.Dp(c, 32), 0);
@@ -48,7 +59,7 @@ static class Telas
 
     // ================================================================================================ Ao vivo
 
-    public static ScrollView AoVivo(Context c, Action<Member> assistir)
+    public static ScrollView AoVivo(Context c, Action<Member> assistir, Action criarGrupo, Action entrarComConvite)
     {
         var sala = Sessao.Sala;
         var col = Tema.Coluna(c);
@@ -57,7 +68,7 @@ static class Telas
         if (Atualizacao.Disponivel is { } nova) col.AddView(AvisoDaAtualizacao(c, nova));
         if (Atualizacao.BloqueiaSala) return Rolagem(c, col);
         if (!Telemetria.Respondido) col.AddView(AvisoDoDiagnostico(c));
-        if (sala is not { Connected: true } && sala?.Members.Count is null or 0) { col.AddView(EsperandoSala(c, sala)); return Rolagem(c, col); }
+        if (sala is not { Connected: true } && sala?.Members.Count is null or 0) { col.AddView(EsperandoSala(c, sala, criarGrupo, entrarComConvite)); return Rolagem(c, col); }
 
         var lives = sala!.Friends.Where(f => f.Live != null).OrderBy(f => f.Live!.SinceUnixMs).ToList();
         if (lives.Count == 0)
@@ -258,7 +269,8 @@ static class Telas
 
     // ================================================================================================ Grupo
 
-    public static ScrollView Grupo(Context c, Action<Member> assistir)
+    public static ScrollView Grupo(Context c, Action<Member> assistir, Action criarGrupo, Action entrarComConvite,
+                                   Action<GrupoDaConta> convidar, Action<GrupoDaConta> sairDoGrupo)
     {
         var sala = Sessao.Sala;
         var col = Tema.Coluna(c);
@@ -269,6 +281,8 @@ static class Telas
             col.AddView(AvisoDaAtualizacao(c, nova));
             return Rolagem(c, col);
         }
+        SecaoDeGrupos(c, col, criarGrupo, entrarComConvite, convidar, sairDoGrupo);
+        if (Sessao.Conta.Grupos.Count == 0) return Rolagem(c, col);   // sem grupo não há sala: a seção acima já diz o que fazer
         if (sala is not { Connected: true } && sala?.Members.Count is null or 0) { col.AddView(EsperandoSala(c, sala)); return Rolagem(c, col); }
 
         var online = sala!.Friends.OrderByDescending(f => f.Live != null).ThenBy(f => f.Nick, StringComparer.CurrentCultureIgnoreCase).ToList();
@@ -313,6 +327,55 @@ static class Telas
         }
         col.AddView(ativ);
         return Rolagem(c, col);
+    }
+
+    /// <summary>Os grupos da conta: tocar troca de grupo, "Convidar" pega o link, segurar pergunta se quer sair; embaixo, criar e entrar com convite.</summary>
+    static void SecaoDeGrupos(Context c, LinearLayout col, Action criarGrupo, Action entrarComConvite, Action<GrupoDaConta> convidar, Action<GrupoDaConta> sairDoGrupo)
+    {
+        col.AddView(TituloDeSecao(c, "Seus grupos", Sessao.Conta.Grupos.Count.ToString()));
+        var grupos = Cartao(c);
+        if (Sessao.Conta.Grupos.Count == 0) grupos.AddView(LinhaSimples(c, "Você ainda não está em um grupo. Crie um ou entre com um convite."));
+        foreach (var g in Sessao.Conta.Grupos)
+        {
+            var l = Tema.Linha(c);
+            l.SetPadding(Tema.Dp(c, 16), 0, Tema.Dp(c, 16), 0);
+            l.SetMinimumHeight(Tema.Dp(c, 56));
+            l.Background = Tema.Tocavel(c, Tema.Cartao, 0);
+            l.Clickable = true;
+            l.Click += (_, _) => Sessao.AbrirSala(g.Id);
+            // segurar a linha pergunta se quer sair do grupo
+            l.LongClickable = true;
+            l.LongClick += (_, e) => { sairDoGrupo(g); e.Handled = true; };
+            l.ContentDescription = g.Nome;
+            var nomeGrupo = Tema.Texto(c, g.Nome, 16);
+            nomeGrupo.SetMaxLines(2); nomeGrupo.Ellipsize = Android.Text.TextUtils.TruncateAt.End;
+            l.AddView(nomeGrupo, Tema.Lp(0, Tema.Ajusta, 1));
+            if (g.Id == Sessao.GrupoId) l.AddView(Tema.Icone(c, Resource.Drawable.ic_check, Tema.DestaqueSuave));
+            var convidarB = Tema.Texto(c, "Convidar", 14, Tema.DestaqueSuave, negrito: true);
+            convidarB.Gravity = GravityFlags.Center;
+            convidarB.SetMinWidth(Tema.Dp(c, 64));
+            convidarB.SetMinHeight(Tema.Dp(c, 48));
+            convidarB.SetPadding(Tema.Dp(c, 10), 0, Tema.Dp(c, 10), 0);
+            convidarB.Background = Tema.Tocavel(c, Color.Transparent, 12);
+            convidarB.Clickable = true;
+            convidarB.ContentDescription = $"Convidar para o grupo {g.Nome}";
+            convidarB.Click += (_, _) => convidar(g);
+            var lpC = Tema.Lp(Tema.Ajusta, Tema.Ajusta);
+            lpC.LeftMargin = Tema.Dp(c, 8);
+            l.AddView(convidarB, lpC);
+            grupos.AddView(l);
+        }
+        col.AddView(grupos);
+        var botoesGrupo = BotoesDeGrupo(c, criarGrupo, entrarComConvite);
+        var lpBg = Tema.Lp(Tema.Cheio, Tema.Ajusta);
+        lpBg.TopMargin = Tema.Dp(c, 12);
+        col.AddView(botoesGrupo, lpBg);
+        if (Sessao.Conta.Grupos.Count > 0)
+        {
+            var dica = Tema.Texto(c, "Segure um grupo para sair dele.", 13, Tema.TextoApagado);
+            dica.SetPadding(Tema.Dp(c, 4), Tema.Dp(c, 10), 0, 0);
+            col.AddView(dica);
+        }
     }
 
     static LinearLayout Cartao(Context c)
@@ -364,6 +427,24 @@ static class Telas
 
     // ================================================================================================ Conta
 
+    /// <summary>"Criar grupo" e "Entrar com convite": lado a lado (na aba Grupo) ou um sobre o outro (no estado vazio do Ao vivo).</summary>
+    static LinearLayout BotoesDeGrupo(Context c, Action criar, Action entrar, bool vertical = false)
+    {
+        var caixa = vertical ? Tema.Coluna(c) : Tema.Linha(c);
+        var b1 = Tema.Botao(c, "Criar grupo");
+        var b2 = Tema.Botao(c, "Entrar com convite", principal: false);
+        foreach (var b in new[] { b1, b2 }) b.SetPadding(Tema.Dp(c, 12), 0, Tema.Dp(c, 12), 0);
+        b1.Click += (_, _) => criar();
+        b2.Click += (_, _) => entrar();
+        int vao = Tema.Dp(c, vertical ? 10 : 8);
+        var lp1 = vertical ? Tema.Lp(Tema.Cheio, Tema.Ajusta) : Tema.Lp(0, Tema.Ajusta, 1);
+        var lp2 = vertical ? Tema.Lp(Tema.Cheio, Tema.Ajusta) : Tema.Lp(0, Tema.Ajusta, 1);
+        if (vertical) lp2.TopMargin = vao; else lp2.LeftMargin = vao;
+        caixa.AddView(b1, lp1);
+        caixa.AddView(b2, lp2);
+        return caixa;
+    }
+
     public static ScrollView Conta(Context c, Action trocarApelido, Action sair)
     {
         var col = Tema.Coluna(c);
@@ -391,23 +472,6 @@ static class Telas
         linha.AddView(textos, Tema.Lp(0, Tema.Ajusta, 1));
         eu.AddView(linha);
         col.AddView(eu);
-
-        col.AddView(TituloDeSecao(c, "Grupos", Sessao.Conta.Grupos.Count.ToString()));
-        var grupos = Cartao(c);
-        if (Sessao.Conta.Grupos.Count == 0) grupos.AddView(LinhaSimples(c, "A conta não está em nenhum grupo. Entre num grupo pelo app no PC."));
-        foreach (var g in Sessao.Conta.Grupos)
-        {
-            var l = Tema.Linha(c);
-            l.SetPadding(Tema.Dp(c, 16), 0, Tema.Dp(c, 16), 0);
-            l.SetMinimumHeight(Tema.Dp(c, 56));
-            l.Background = Tema.Tocavel(c, Tema.Cartao, 0);
-            l.Clickable = true;
-            l.Click += (_, _) => Sessao.AbrirSala(g.Id);
-            l.AddView(Tema.Texto(c, g.Nome, 16), Tema.Lp(0, Tema.Ajusta, 1));
-            if (g.Id == Sessao.GrupoId) l.AddView(Tema.Icone(c, Resource.Drawable.ic_check, Tema.DestaqueSuave));
-            grupos.AddView(l);
-        }
-        col.AddView(grupos);
 
         col.AddView(TituloDeSecao(c, "Diagnóstico"));
         var diag = Cartao(c);

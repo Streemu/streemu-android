@@ -17,7 +17,11 @@ namespace Streemu.Proto;
 /// No build Debug, abrir com "--es codigo X" (testar-no-celular.ps1) vai direto para o player no modo de código, sem sala.
 /// </summary>
 [Activity(Label = "Streemu", MainLauncher = true, Exported = true, Theme = "@android:style/Theme.DeviceDefault.NoActionBar",
-          WindowSoftInputMode = SoftInput.AdjustResize)]
+          WindowSoftInputMode = SoftInput.AdjustResize, LaunchMode = LaunchMode.SingleTask)]
+// convite de grupo: streemu://grupo/<código> e https://www.streemu.com.br/g/<código> (esse com verificação de link, para abrir direto no app)
+[IntentFilter(new[] { Intent.ActionView }, Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable }, DataScheme = "streemu", DataHost = "grupo")]
+[IntentFilter(new[] { Intent.ActionView }, Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable }, AutoVerify = true,
+              DataScheme = "https", DataHost = "www.streemu.com.br", DataPathPrefix = "/g/")]
 public class MainActivity : Android.App.Activity
 {
     enum Aba { AoVivo, Grupo, Conta }
@@ -50,6 +54,8 @@ public class MainActivity : Android.App.Activity
         }
 #endif
         Sessao.Iniciar(this, aguardarAtualizacao: Atualizacao.DeveVerificarAoAbrir);
+        // o link do convite vem só na primeira criação: girar a tela ou voltar pelo Recentes reentrega o mesmo Intent
+        if (savedInstanceState == null && (Intent == null || (Intent.Flags & ActivityFlags.LaunchedFromHistory) == 0)) Convites.Receber(this, Intent);
         _aba = (Aba)(savedInstanceState?.GetInt("aba") ?? 0);
         _esperandoCodigo = savedInstanceState?.GetBoolean("esperando") ?? false;
         Janela.BordaABorda(this);
@@ -58,6 +64,28 @@ public class MainActivity : Android.App.Activity
         Janela.AplicarMargens(_raiz);
         SetContentView(_raiz);
         Montar();
+        _raiz.Post(() => Convites.ProcessarPendente(this));
+    }
+
+    /// <summary>Com a tela já aberta (SingleTask), um link de convite chega aqui.</summary>
+    protected override void OnNewIntent(Intent? intent)
+    {
+        base.OnNewIntent(intent);
+        if (intent == null) return;
+        Intent = intent;   // o equivalente a SetIntent: getIntent() passa a ser o link novo
+        if (_raiz == null) return;
+        Convites.Receber(this, intent);
+        if (!_mostrandoInicio && Convites.Pendente(this) != null) Montar();   // sem conta: a entrada passa a mostrar o aviso do convite
+        Convites.ProcessarPendente(this);
+    }
+
+    /// <summary>Do convite aceito: a aba Ao vivo, onde o grupo novo aparece.</summary>
+    internal void IrParaAoVivo()
+    {
+        _aba = Aba.AoVivo;
+        if (!_mostrandoInicio) return;
+        MostrarAba();
+        Sessao.PedirMiniaturas(true);
     }
 
     protected override void OnSaveInstanceState(Bundle outState)
@@ -165,6 +193,13 @@ public class MainActivity : Android.App.Activity
         form.SetGravity(GravityFlags.CenterHorizontal);
         form.AddView(Tema.Texto(this, "Streemu", 34, Tema.DestaqueSuave, negrito: true), Centro(Tema.Dp(this, 12)));
         form.AddView(Centralizado(Tema.Texto(this, "Assista às lives do seu grupo no celular.", 16, Tema.TextoApagado)), Centro(Tema.Dp(this, 4)));
+        if (Convites.Pendente(this) != null)
+        {
+            var convite = Centralizado(Tema.Texto(this, "Você recebeu um convite. Entre na sua conta para aceitar.", 14, Tema.CorTexto));
+            convite.Background = Tema.Forma(this, Tema.Selecionado, 12);
+            convite.SetPadding(Tema.Dp(this, 14), Tema.Dp(this, 10), Tema.Dp(this, 14), Tema.Dp(this, 10));
+            form.AddView(convite, Formulario(Tema.Dp(this, 16)));
+        }
 
         if (!_esperandoCodigo)
         {
@@ -271,6 +306,7 @@ public class MainActivity : Android.App.Activity
             EsconderTeclado();
             Sessao.AbrirSala(null);
             Montar();
+            Convites.ProcessarPendente(this);   // o convite que fez a pessoa entrar na conta
         });
     }
 
@@ -411,8 +447,9 @@ public class MainActivity : Android.App.Activity
         _conteudo.RemoveAllViews();
         _telaAtual = _aba switch
         {
-            Aba.AoVivo => Telas.AoVivo(this, Assistir),
-            Aba.Grupo => Telas.Grupo(this, Assistir),
+            Aba.AoVivo => Telas.AoVivo(this, Assistir, () => Convites.PedirCriacao(this), () => Convites.PedirConvite(this)),
+            Aba.Grupo => Telas.Grupo(this, Assistir, () => Convites.PedirCriacao(this), () => Convites.PedirConvite(this),
+                                     g => Convites.Convidar(this, g), g => Convites.ConfirmarSaidaDoGrupo(this, g)),
             _ => Telas.Conta(this, TrocarApelido, ConfirmarSaida),
         };
         _abaDaTela = _aba;
@@ -425,6 +462,7 @@ public class MainActivity : Android.App.Activity
     protected override void OnDestroy()
     {
         if (_raiz != null && IsFinishing) Telemetria.Fechar();
+        Convites.Fechar();
         base.OnDestroy();
     }
 

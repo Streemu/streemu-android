@@ -61,8 +61,13 @@ static class Sessao
     /// <summary>Abre a sala do grupo (o último usado, se ainda for da conta; senão o primeiro).</summary>
     public static void AbrirSala(string? grupoId)
     {
-        if (Atualizacao.BloqueiaSala || AguardandoAtualizacao) return;
         var gs = Conta.Grupos;
+        // sala travada pela atualização: guarda a escolha (o grupo em que a pessoa acabou de entrar, por exemplo) para quando ela abrir
+        if (Atualizacao.BloqueiaSala || AguardandoAtualizacao)
+        {
+            if (grupoId != null && gs.Any(g => g.Id == grupoId)) _prefs.Edit()!.PutString("grupo", grupoId)!.Apply();
+            return;
+        }
         if (grupoId == null || gs.All(g => g.Id != grupoId)) grupoId = gs.FirstOrDefault()?.Id;
         if (grupoId == GrupoId && Sala != null) return;
         FecharSala();
@@ -105,7 +110,8 @@ static class Sessao
         Avisar();
     }
 
-    static void Avisar() => Mudou?.Invoke();
+    /// <summary>Quem mudou algo que a tela mostra fora da sala (a lista de grupos da conta, depois de criar, entrar ou sair) avisa por aqui.</summary>
+    public static void Avisar() => Mudou?.Invoke();
 
     // ------------------------------------------------------------------ imagens: miniaturas das lives e avatares
 
