@@ -105,6 +105,8 @@ sealed class TsDemux
                 if (9 + hdl <= carga.Length) _pes.Write(carga[(9 + hdl)..]);
             }
             else if (_pes.Length > 0 || _esperado > 0) _pes.Write(carga);
+            // um fluxo sem início de PES nunca fecharia o quadro e a memória cresceria até o Android matar o app
+            if (_pes.Length > 8 << 20) { _pes.SetLength(0); _esperado = 0; _quebrado = false; Descartados++; return; }
 
             if (_esperado > 0 && _pes.Length >= _esperado) Entregar();
         }

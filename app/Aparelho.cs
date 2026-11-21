@@ -176,9 +176,12 @@ static class Aparelho
     /// <summary>"1440p 60 FPS" (o texto da qualidade que a sala manda) -> 2560x1440 a 60. Nulo se não der para ler.</summary>
     public static (int W, int H, int Fps)? LerQualidade(string qualidade)
     {
-        var m = Regex.Match(qualidade, @"(\d{3,4})p\D*(\d{2,3})", RegexOptions.IgnoreCase);
+        // o texto vem de quem transmite: só dígitos ASCII (\d aceita dígitos de outras escritas, e o int.Parse lança com eles) e faixas plausíveis
+        var m = Regex.Match(qualidade, @"([0-9]{3,4})p[^0-9]*([0-9]{2,3})", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         if (!m.Success) return null;
-        int h = int.Parse(m.Groups[1].Value), fps = int.Parse(m.Groups[2].Value);
+        int h = int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+        int fps = int.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture);
+        if (h is < 144 or > 4320 || fps is < 10 or > 240) return null;
         int w = (h * 16 / 9 + 1) & ~1;   // as lives são 16:9
         return (w, h, fps);
     }

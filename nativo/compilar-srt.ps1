@@ -63,7 +63,9 @@ foreach ($abi in $Abis) {
     $saida = Join-Path $raiz "app\lib\$abi"
     New-Item -ItemType Directory -Force $saida | Out-Null
     $so = Get-ChildItem $bs -Filter "libsrt.so*" | Where-Object { -not $_.PSIsContainer -and $_.Name -match '^libsrt\.so(\.\d+)*$' } | Sort-Object Length -Descending | Select-Object -First 1
+    if (-not $so) { throw "O build do SRT não gerou libsrt.so para $abi." }
     $strip = Join-Path $Ndk "toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-strip.exe"
     & $strip --strip-unneeded -o (Join-Path $saida "libsrt.so") $so.FullName
+    if ($LASTEXITCODE -ne 0) { throw "llvm-strip falhou para $abi." }
     Write-Host "OK: $saida\libsrt.so ($([math]::Round((Get-Item (Join-Path $saida 'libsrt.so')).Length / 1KB)) KB, SRT $SrtTag + mbedtls $MbedTag)"
 }

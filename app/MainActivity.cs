@@ -14,7 +14,7 @@ namespace Streemu.Proto;
 /// A tela principal. Sem conta: a entrada (navegador + código de 6 dígitos). Com conta: o Início, com três abas: Ao vivo (as lives do grupo, com
 /// miniatura), Grupo (quem está online, offline e a atividade recente) e Conta. A navegação fica embaixo no celular em pé e vira uma barra lateral em
 /// tela larga (600 dp ou mais: celular deitado, dobrável aberto, tablet), onde a lista de lives também ganha colunas.
-/// Abrir com "--es codigo X" (testar-no-celular.ps1) vai direto para o player no modo de código, sem sala.
+/// No build Debug, abrir com "--es codigo X" (testar-no-celular.ps1) vai direto para o player no modo de código, sem sala.
 /// </summary>
 [Activity(Label = "Streemu", MainLauncher = true, Exported = true, Theme = "@android:style/Theme.DeviceDefault.NoActionBar",
           WindowSoftInputMode = SoftInput.AdjustResize)]
@@ -34,18 +34,22 @@ public class MainActivity : Android.App.Activity
     // entrada na conta
     EditText? _codigo;
     TextView? _erroEntrada;
+    LinearLayout? _atualizacaoNaEntrada;
     bool _esperandoCodigo;
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
-        if (Intent?.GetStringExtra("codigo") is { Length: > 0 } codigo)
+        Atualizacao.Iniciar(this);
+#if DEBUG
+        if (!Atualizacao.BloqueiaSala && Intent?.GetStringExtra("codigo") is { Length: > 0 } codigo)
         {
             StartActivity(new Intent(this, typeof(PlayerActivity)).PutExtra("codigo", codigo));
             Finish();
             return;
         }
-        Sessao.Iniciar(this);
+#endif
+        Sessao.Iniciar(this, aguardarAtualizacao: Atualizacao.DeveVerificarAoAbrir);
         _aba = (Aba)(savedInstanceState?.GetInt("aba") ?? 0);
         _esperandoCodigo = savedInstanceState?.GetBoolean("esperando") ?? false;
         Janela.BordaABorda(this);
@@ -66,8 +70,10 @@ public class MainActivity : Android.App.Activity
     protected override void OnStart()
     {
         base.OnStart();
+        if (_raiz == null) return;
         _visivel = true;
         Sessao.Mudou += MarcarRedesenho;
+        Atualizacao.Mudou += RedesenharAtualizacao;
         // a miniatura de cada live: o PC manda a cada ~8 s enquanto alguém pede; pedir de novo a cada 20 s mantém o pedido vivo
         _miniaturas = new Timer(_ => { if (_aba == Aba.AoVivo) Sessao.PedirMiniaturas(true); }, null, 500, 20_000);
         MarcarRedesenho();
@@ -78,15 +84,40 @@ public class MainActivity : Android.App.Activity
         _visivel = false;
         Sessao.Mudou -= MarcarRedesenho;
         _miniaturas?.Dispose(); _miniaturas = null;
-        Sessao.PedirMiniaturas(false);
+        Atualizacao.Mudou -= RedesenharAtualizacao;
+        if (_raiz != null) Sessao.PedirMiniaturas(false);
         base.OnStop();
     }
 
     protected override void OnResume()
     {
         base.OnResume();
+        if (_raiz == null) return;
+        Atualizacao.Mostrar(this);
         // voltando do navegador: o campo do código já pronto para digitar
         if (_codigo != null) { _codigo.RequestFocus(); MostrarTeclado(_codigo); }
+    }
+
+    protected override void OnPause()
+    {
+        Atualizacao.Ocultar(this);
+        base.OnPause();
+    }
+
+    internal void MostrarAtualizacao()
+    {
+        _aba = Aba.AoVivo;
+        RedesenharAtualizacao();
+        _telaAtual?.ScrollTo(0, 0);
+    }
+
+    void RedesenharAtualizacao()
+    {
+        if (!_visivel) return;
+        if (_mostrandoInicio) { Atualizar(); return; }
+        _atualizacaoNaEntrada?.RemoveAllViews();
+        if (Atualizacao.Disponivel is { } nova)
+            _atualizacaoNaEntrada?.AddView(Telas.AvisoDaAtualizacao(this, nova));
     }
 
     /// <summary>Junta várias mudanças seguidas (lista de amigos, miniatura, avatar) num redesenho só.</summary>
@@ -103,6 +134,7 @@ public class MainActivity : Android.App.Activity
         _raiz.RemoveAllViews();
         _botoesNav.Clear();
         _codigo = null; _erroEntrada = null; _telaAtual = null;
+        _atualizacaoNaEntrada = null;
         _mostrandoInicio = Sessao.Conta.TemConta;
         if (_mostrandoInicio) MontarInicio(); else MontarEntrada();
     }
@@ -171,8 +203,15 @@ public class MainActivity : Android.App.Activity
             form.AddView(deNovo, Formulario(Tema.Dp(this, 4)));
         }
         corpo.AddView(form, larga ? Tema.Lp(0, Tema.Ajusta, 1) : Tema.Lp(Tema.Cheio, Tema.Ajusta));
-        rolagem.AddView(corpo);
+        var entrada = Tema.Coluna(this);
+        _atualizacaoNaEntrada = Tema.Coluna(this);
+        _atualizacaoNaEntrada.SetPadding(m, 0, m, 0);
+        entrada.AddView(_atualizacaoNaEntrada, Tema.Lp(Tema.Cheio, Tema.Ajusta));
+        entrada.AddView(corpo, Tema.Lp(Tema.Cheio, 0, 1));
+        rolagem.AddView(entrada);
         _raiz.AddView(rolagem);
+        if (Atualizacao.Disponivel is { } nova)
+            _atualizacaoNaEntrada.AddView(Telas.AvisoDaAtualizacao(this, nova));
     }
 
     static TextView Centralizado(TextView t) { t.Gravity = GravityFlags.Center; return t; }
@@ -213,7 +252,10 @@ public class MainActivity : Android.App.Activity
         _confirmando = true;
         _erroEntrada.SetTextColor(Tema.TextoApagado);
         _erroEntrada.Text = "Conferindo...";
-        var (ok, erro) = await Sessao.Conta.RetirarAsync(_codigo.Text ?? "");
+        bool ok; string? erro;
+        // sem o catch, uma falha (rede, Keystore, disco) deixava "Conferindo..." para sempre e o código não podia ser tentado de novo
+        try { (ok, erro) = await Sessao.Conta.RetirarAsync(_codigo.Text ?? ""); }
+        catch (Exception e) { ok = false; erro = "não deu para guardar a sessão (" + e.GetType().Name + ")"; Streemu.Util.Log.Info("[conta] login falhou: " + e); }
         RunOnUiThread(() =>
         {
             _confirmando = false;
@@ -310,6 +352,7 @@ public class MainActivity : Android.App.Activity
 
     void EscolherGrupo(View ancora)
     {
+        if (Atualizacao.BloqueiaSala) { MostrarAtualizacao(); return; }
         var gs = Sessao.Conta.Grupos;
         if (gs.Count == 0) return;
         var menu = new PopupMenu(this, ancora);
@@ -381,12 +424,13 @@ public class MainActivity : Android.App.Activity
     /// <summary>Saindo do app pelo voltar (não é rotação nem o Android pausando): fecha a sessão do diagnóstico.</summary>
     protected override void OnDestroy()
     {
-        if (IsFinishing) Telemetria.Fechar();
+        if (_raiz != null && IsFinishing) Telemetria.Fechar();
         base.OnDestroy();
     }
 
     void Assistir(Member m)
     {
+        if (Atualizacao.BloqueiaSala) { MostrarAtualizacao(); return; }
         if (m.Live == null) return;
         StartActivity(new Intent(this, typeof(PlayerActivity))
             .PutExtra("conta", m.Id).PutExtra("apelido", m.Nick).PutExtra("sala", m.Live.StreamId)

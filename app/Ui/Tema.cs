@@ -113,6 +113,7 @@ static class Tema
     /// <summary>"Há 12 min", "há 2 h 05 min": há quanto tempo a live começou.</summary>
     public static string AoVivoHa(long desdeUnixMs)
     {
+        desdeUnixMs = Streemu.Util.JsonSeguro.HoraUnixMs(desdeUnixMs);   // vem de quem transmite: fora da faixa, FromUnixTimeMilliseconds lança
         if (desdeUnixMs <= 0) return "";
         var d = DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeMilliseconds(desdeUnixMs);
         if (d.TotalMinutes < 1) return "agora";

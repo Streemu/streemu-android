@@ -36,6 +36,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       PRE_LANCAMENTO: ${{ inputs.pre_lancamento || false }}
+      ARQUIVOS_DA_ENTREGA: Streemu-Android.apk atualizacao.json SHA256SUMS.txt
       NDK_VERSION: '28.2.13676358'
       RASCUNHO_OFICIAL: ${{ inputs.rascunho_oficial || false }}
     steps:
@@ -69,7 +70,7 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             $release = $existente | ConvertFrom-Json
             if (!$release.isDraft) {
-              $faltam = @('Streemu-Android.apk', 'SHA256SUMS.txt', 'atualizacao.json') |
+              $faltam = ($env:ARQUIVOS_DA_ENTREGA -split ' ') |
                 Where-Object { $_ -notin $release.assets.name }
               if ($faltam -or $release.isPrerelease -ne ($env:PRE_LANCAMENTO -eq 'true') -or (git rev-list -n 1 $tag) -ne $commit) {
                 throw 'A tag publicada já existe com conteúdo diferente.'
@@ -109,7 +110,7 @@ jobs:
           dotnet workload install android
           if ($LASTEXITCODE -ne 0) { throw 'Não consegui instalar o workload Android.' }
 
-      - name: Compilar e assinar o APK universal
+      - name: Compilar e assinar o APK
         if: steps.entrega.outputs.publicar == 'true'
         shell: pwsh
         env:
@@ -124,7 +125,7 @@ jobs:
           [IO.File]::WriteAllBytes($env:STREEMU_ANDROID_KEYSTORE, [Convert]::FromBase64String($env:KEYSTORE_BASE64))
           Remove-Item Env:KEYSTORE_BASE64
           $e = Get-Content entrega.json -Raw -Encoding UTF8 | ConvertFrom-Json
-          dotnet publish app/Streemu.Proto.csproj -c Release -o apk "-p:ApplicationId=$env:PACOTE" "-p:ApplicationVersion=$($e.versionCode)" "-p:ApplicationDisplayVersion=$($e.versao)" "-p:AndroidSdkDirectory=$env:ANDROID_HOME"
+          dotnet publish app/Streemu.Proto.csproj -c Release --artifacts-path "$PWD/build" -o apk "-p:ApplicationId=$env:PACOTE" "-p:ApplicationVersion=$($e.versionCode)" "-p:ApplicationDisplayVersion=$($e.versao)" "-p:AndroidSdkDirectory=$env:ANDROID_HOME"
           if ($LASTEXITCODE -ne 0) { throw 'A compilação ou assinatura falhou.' }
 
       - name: Apagar o keystore
@@ -134,7 +135,7 @@ jobs:
           $key = Join-Path $env:RUNNER_TEMP 'streemu-release.p12'
           if (Test-Path -LiteralPath $key) { Remove-Item -LiteralPath $key -Force }
 
-      - name: Conferir o APK e preparar a release
+      - name: Conferir os APKs e preparar a release
         if: steps.entrega.outputs.publicar == 'true'
         env:
           TAG: ${{ steps.entrega.outputs.tag }}
@@ -142,38 +143,42 @@ jobs:
         shell: pwsh
         run: |
           $e = Get-Content entrega.json -Raw -Encoding UTF8 | ConvertFrom-Json
+          New-Item -ItemType Directory -Force pub | Out-Null
+          $tools = Join-Path $env:ANDROID_HOME 'build-tools/36.0.0'
+          $apkNome = 'Streemu-Android.apk'
           $arquivos = @(Get-ChildItem -LiteralPath apk -Filter '*-Signed.apk')
           if ($arquivos.Count -ne 1) { throw 'Esperava um único APK assinado.' }
-          New-Item -ItemType Directory -Force pub | Out-Null
-          $apk = 'pub/Streemu-Android.apk'
+          $apk = "pub/$apkNome"
           Copy-Item -LiteralPath $arquivos[0].FullName -Destination $apk
-          $tools = Join-Path $env:ANDROID_HOME 'build-tools/36.0.0'
           & (Join-Path $tools 'apksigner.bat') verify $apk
-          if ($LASTEXITCODE -ne 0) { throw 'A assinatura do APK é inválida.' }
+          if ($LASTEXITCODE -ne 0) { throw "A assinatura de $apkNome é inválida." }
           $info = & (Join-Path $tools 'aapt.exe') dump badging $apk
           if ($LASTEXITCODE -ne 0 -or
               $info[0] -notlike "package: name='$env:PACOTE' versionCode='$($e.versionCode)' versionName='$($e.versao)'*" -or
               -not ($info -match "native-code:.*'arm64-v8a'") -or -not ($info -match "native-code:.*'armeabi-v7a'")) {
-            throw 'O APK não corresponde à entrega ou não é universal.'
+            throw "$apkNome não corresponde à entrega ou não é universal."
           }
+
           $zip = [IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $apk).Path)
           try {
             foreach ($abi in 'arm64-v8a', 'armeabi-v7a') {
-              if (!$zip.GetEntry("lib/$abi/libsrt.so")) { throw "O APK não contém libsrt.so para $abi." }
+              if (!$zip.GetEntry("lib/$abi/libsrt.so")) { throw "$apkNome não contém libsrt.so para $abi." }
             }
           } finally { $zip.Dispose() }
 
           $sha = (Get-FileHash -LiteralPath $apk -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$sha  Streemu-Android.apk" | Set-Content -Encoding ascii pub/SHA256SUMS.txt
           [ordered]@{
             versionCode = $e.versionCode
             versao = $e.versao
             notas = $e.notas
             obrigatoria = $e.obrigatoria
-            url = "https://github.com/Streemu/streemu-android/releases/download/$env:TAG/Streemu-Android.apk"
+            url = "https://github.com/Streemu/streemu-android/releases/download/$env:TAG/$apkNome"
             sha256 = $sha
             tamanho = (Get-Item -LiteralPath $apk).Length
           } | ConvertTo-Json | Set-Content -Encoding utf8 pub/atualizacao.json
+          $checksums = "$sha  $apkNome"
+          $checksums | Set-Content -Encoding ascii pub/SHA256SUMS.txt
+
           $notas = $e.notas
           if ($env:PRE_LANCAMENTO -eq 'true') {
             $notas = "APK de teste. Esta pré-release é instalada separadamente do Streemu de distribuição." + [Environment]::NewLine * 2 + $notas
@@ -185,7 +190,7 @@ jobs:
         with:
           subject-path: pub/Streemu-Android.apk
 
-      - name: Publicar a release com os três arquivos
+      - name: Preparar a release completa
         if: steps.entrega.outputs.publicar == 'true'
         env:
           TAG: ${{ steps.entrega.outputs.tag }}
@@ -193,7 +198,7 @@ jobs:
         shell: pwsh
         run: |
           $info = Get-Content pub/atualizacao.json -Raw -Encoding UTF8 | ConvertFrom-Json
-          $arquivos = @('pub/Streemu-Android.apk', 'pub/SHA256SUMS.txt', 'pub/atualizacao.json')
+          $arquivos = ($env:ARQUIVOS_DA_ENTREGA -split ' ') | ForEach-Object { "pub/$_" }
           $previa = $env:PRE_LANCAMENTO -eq 'true'
           $release = gh release view $env:TAG --json isDraft,targetCommitish 2>$null
           if ($LASTEXITCODE -eq 0) {

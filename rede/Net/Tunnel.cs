@@ -241,7 +241,8 @@ public sealed class Tunnel : IDisposable
             var probe = _relayProbe;
             if (probe != null && data.AsSpan().SequenceEqual(probe.Value.Payload)) { probe.Value.Done.TrySetResult(true); return; }
             Interlocked.Increment(ref _rxViaRelay);
-            ProcessPacket(data, peer);
+            try { ProcessPacket(data, peer); }
+            catch (Exception e) { Log.Info("[conexão] pacote do TURN ignorado: " + e.GetType().Name); }
         };
         Turn = turn;
         try
@@ -475,16 +476,21 @@ public sealed class Tunnel : IDisposable
             try { n = _sock.ReceiveFrom(buf, ref from); }
             catch (SocketException) { continue; }
             catch (ObjectDisposedException) { break; }
-            var span = buf.AsSpan(0, n);
-            var ep = (IPEndPoint)from;
-            var turn = Turn;
-            if (turn != null && ep.Equals(turn.Server) && turn.Handle(span)) continue;
-            if (n >= 20 && (span[0] & 0xC0) == 0 && span[4] == 0x21 && span[5] == 0x12 && span[6] == 0xA4 && span[7] == 0x42)
+            // um pacote malformado (ou um handler que falha) não pode matar esta thread: no Android, exceção solta em thread derruba o app
+            try
             {
-                HandleStun(span);
-                continue;
+                var span = buf.AsSpan(0, n);
+                var ep = (IPEndPoint)from;
+                var turn = Turn;
+                if (turn != null && ep.Equals(turn.Server) && turn.Handle(span)) continue;
+                if (n >= 20 && (span[0] & 0xC0) == 0 && span[4] == 0x21 && span[5] == 0x12 && span[6] == 0xA4 && span[7] == 0x42)
+                {
+                    HandleStun(span);
+                    continue;
+                }
+                ProcessPacket(span, ep);
             }
-            ProcessPacket(span, ep);
+            catch (Exception e) { Log.Info("[conexão] pacote ignorado: " + e.GetType().Name); }
         }
     }
 
@@ -657,7 +663,7 @@ public sealed class Tunnel : IDisposable
     {
         JsonObject? msg;
         try { msg = JsonNode.Parse(Encoding.UTF8.GetString(payload)) as JsonObject; } catch { return; }
-        string? id = msg?["id"]?.GetValue<string>();
+        string? id = JsonSeguro.Texto(msg?["id"]);
         if (msg == null || id == null) return;
         lock (_seenCtrl)
         {

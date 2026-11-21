@@ -68,6 +68,8 @@ public static class FrasesDeAtividade
     /// <summary>"agora", "há 5 min", "há 2 h", "ontem", "há 3 dias". Hora no futuro (relógio diferente do servidor) vira "agora".</summary>
     public static string Quando(long horaUnixMs, DateTimeOffset agora)
     {
+        horaUnixMs = Streemu.Util.JsonSeguro.HoraUnixMs(horaUnixMs);
+        if (horaUnixMs == 0) return "agora";
         var d = agora - DateTimeOffset.FromUnixTimeMilliseconds(horaUnixMs);
         if (d.TotalMinutes < 1) return "agora";
         if (d.TotalMinutes < 60) return $"há {(int)d.TotalMinutes} min";

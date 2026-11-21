@@ -15,16 +15,32 @@ Android 8.0 ou mais novo (64 ou 32 bits).
 
 ## Permissões
 
-Só duas, e nenhuma pede confirmação:
-
-- `INTERNET`: para receber a live e falar com o servidor do grupo.
+- `INTERNET`: para receber a live, falar com o servidor do grupo e baixar atualizações do GitHub.
 - `ACCESS_NETWORK_STATE`: para saber quando a rede muda e reconectar.
+- `REQUEST_INSTALL_PACKAGES`: para pedir ao Android que instale uma atualização do Streemu. O Android pode pedir que você permita instalações pelo Streemu nas configurações.
 
 O app **não** pede câmera, microfone, localização, contatos, arquivos nem notificações.
 
-## Diagnóstico (o que o app envia)
+## Atualizações
 
-Na primeira vez, o app mostra um aviso no topo da aba **Ao vivo**. **Nada do diagnóstico sai do celular antes de você responder.** "Entendi" liga, "Desligar" desliga, e dá para mudar quando quiser em **Conta > Diagnóstico**.
+O Streemu consulta o [manifesto da release mais nova](https://github.com/Streemu/streemu-android/releases/latest/download/atualizacao.json) diretamente no GitHub. Ele espera a live acabar para procurar ou baixar uma atualização. No Wi-Fi, baixa em segundo plano. Se estiver em dados móveis, mostra o tamanho e pede sua autorização antes de baixar. Você também pode procurar em **Conta > Sobre**.
+
+O app confere o APK antes de pedir a instalação. O Android sempre pede confirmação. Se você ainda usa o protótipo assinado com a chave de desenvolvimento, desinstale-o uma vez, instale o primeiro APK oficial e entre na sua conta de novo.
+
+Para conferir um APK baixado manualmente, baixe também o `SHA256SUMS.txt` da mesma release. Compare o hash do arquivo e verifique o atestado de compilação do GitHub.
+
+```powershell
+Get-FileHash -Algorithm SHA256 Streemu-Android.apk
+gh attestation verify Streemu-Android.apk -R Streemu/streemu-android
+```
+
+## Versões disponíveis
+
+- `Streemu-Android.apk` é o único APK. Ele se atualiza sozinho pelo [manifesto da última release](https://github.com/Streemu/streemu-android/releases/latest/download/atualizacao.json) e confere o SHA-256 e a assinatura antes de instalar.
+
+## O que o diagnóstico envia
+
+O diagnóstico vem **ligado**. Na primeira vez, o app mostra um aviso no topo da aba **Ao vivo**: "Entendi" mantém ligado, "Desligar" desliga, e dá para mudar quando quiser em **Conta > Diagnóstico**. Desligado, nada é gravado nem enviado, e o que ainda não tinha subido é apagado do celular.
 
 Ligado, ele envia para o servidor do Streemu (`app/Telemetria.cs`):
 
@@ -44,10 +60,12 @@ Precisa do .NET 10 com o workload `android` e do Android NDK (para o `libsrt`).
 ```powershell
 dotnet workload install android
 .\nativo\compilar-srt.ps1
-dotnet build app -c Release
+dotnet build app -c Debug
 ```
 
 O `nativo/compilar-srt.ps1` baixa o [SRT](https://github.com/Haivision/srt) e o [Mbed TLS](https://github.com/Mbed-TLS/mbedtls) nas versões fixadas no script e compila o `libsrt.so` em `app/lib/<arquitetura>/`.
+
+Para compilar em Release, configure `STREEMU_ANDROID_KEYSTORE`, `STREEMU_ANDROID_KEY_ALIAS`, `STREEMU_ANDROID_STORE_PASSWORD` e `STREEMU_ANDROID_KEY_PASSWORD` no ambiente e execute `dotnet publish app -c Release`. Para atualizar um APK existente, os dois precisam ter a mesma assinatura.
 
 ## Pastas
 

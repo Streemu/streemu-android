@@ -18,10 +18,10 @@ namespace Streemu.Proto;
 /// <summary>
 /// O player: pede para assistir pela sala do grupo (o mesmo pedido do app Windows, MainForm.Grupo.cs) e toca vídeo e som em tela cheia, deitado.
 /// Os controles aparecem com um toque e somem sozinhos em 3 s. Se a rede do celular muda (Wi-Fi para 4G), pede de novo com uma ligação nova.
-/// Modo de teste: "adb shell am start -n .../.PlayerActivity --es codigo X" conecta direto ao código do proto-envio, sem sala (o meu código vai para
+/// No build Debug, a tela principal abre este player com o código do proto-envio, sem sala (o código do celular vai para
 /// o logcat como "MEU CÓDIGO").
 /// </summary>
-[Activity(Label = "Streemu", Exported = true, Theme = "@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen", ScreenOrientation = ScreenOrientation.SensorLandscape,
+[Activity(Label = "Streemu", Exported = false, Theme = "@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen", ScreenOrientation = ScreenOrientation.SensorLandscape,
           ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize | ConfigChanges.KeyboardHidden)]
 public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
 {
@@ -68,12 +68,17 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
     bool _videoOkTel;
     int _tentativaMidia;
     Rede? _redeCallback;
+    bool _playerIniciado;
 
     public PlayerActivity() { _esconder = new Java.Lang.Runnable(() => Controles(false)); }
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+        Atualizacao.Iniciar(this);
+        if (Atualizacao.BloqueiaSala) { Finish(); return; }
+        _playerIniciado = true;
+        Atualizacao.PlayerAbriu();
         Window!.AddFlags(WindowManagerFlags.KeepScreenOn);
         if (OperatingSystem.IsAndroidVersionAtLeast(28)) Window.Attributes!.LayoutInDisplayCutoutMode = LayoutInDisplayCutoutMode.ShortEdges;
         Telemetria.Ativo = true;
@@ -400,12 +405,13 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
     void AoReceber(string de, string apelido, JsonObject msg) => Ui(() =>
     {
         var link = _link;
-        if (link == null || de != _conta || msg["sessao"]?.GetValue<string>() != link.SessionId) return;
-        switch (msg["tipo"]?.GetValue<string>())
+        // a mensagem vem do PC de outra pessoa: campo com tipo errado vira nulo (GetValue lançaria aqui, na thread da tela)
+        if (link == null || de != _conta || Streemu.Util.JsonSeguro.Texto(msg["sessao"]) != link.SessionId) return;
+        switch (Streemu.Util.JsonSeguro.Texto(msg["tipo"]))
         {
             case "aceito":
-                try { link.Connect(msg["codigo"]?.GetValue<string>() ?? ""); }
-                catch (FormatException e) { Esperando("Não deu para conectar.", $"{apelido} mandou um código inválido ({e.Message}).", erro: true); return; }
+                try { link.Connect(Streemu.Util.JsonSeguro.Texto(msg["codigo"]) ?? ""); }
+                catch (Exception e) { Esperando("Não deu para conectar.", $"{apelido} mandou um código inválido ({e.Message}).", erro: true); return; }
                 Esperando("Conectando...");
                 _aceitoEm = Environment.TickCount64;
                 _tunel = link.Tunnel; _relay = link.Relay;
@@ -413,7 +419,7 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
                 break;
             case "recusado":
                 EncerrarLigacao(avisar: false);
-                Esperando($"{apelido} não aceitou.", msg["motivo"]?.GetValue<string>() ?? "", erro: true);
+                Esperando($"{apelido} não aceitou.", Streemu.Util.JsonSeguro.Texto(msg["motivo"]) ?? "", erro: true);
                 break;
             case "parar":
                 EncerrarLigacao(avisar: false);
@@ -691,6 +697,7 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
 
     protected override void OnDestroy()
     {
+        if (!_playerIniciado) { base.OnDestroy(); return; }
         _fechando = true;
         _ui.RemoveCallbacks(_esconder);
         Sessao.Mensagem -= AoReceber;
@@ -706,6 +713,7 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
         _som?.Dispose();
         link?.Dispose();
         if (_codigoTeste != null) { _tunel?.Dispose(); _relay?.Dispose(); }
+        Atualizacao.PlayerFechou();
         base.OnDestroy();
     }
 

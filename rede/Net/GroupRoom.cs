@@ -324,7 +324,7 @@ public sealed class GroupRoom : ISala
                     LiveInfo? live = null;
                     if (o["ao_vivo"] is JsonObject v && v["sala"]?.GetValue<string>() is string sala && sala != "")
                         live = new LiveInfo(sala, v["jogo"]?.GetValue<string>() ?? "", v["qualidade"]?.GetValue<string>() ?? "",
-                            v["desde"]?.GetValue<long>() ?? 0, v["assistindo"]?.GetValue<int>() ?? 0);
+                            JsonSeguro.HoraUnixMs(JsonSeguro.Inteiro(v["desde"]) ?? 0), (int)Math.Clamp(JsonSeguro.Inteiro(v["assistindo"]) ?? 0, 0, 100_000));
                     list.Add(new Member(id, o["apelido"]?.GetValue<string>() ?? "amigo", o["versao"]?.GetValue<string>() ?? "", live));
                 }
                 // Mesmo id duas vezes: a sala manda fechar a conexão antiga quando a pessoa volta, mas ela ainda pode vir na lista

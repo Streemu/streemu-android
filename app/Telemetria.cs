@@ -16,8 +16,8 @@ namespace Streemu.Proto;
 /// Quem é quem: o id do dispositivo (<see cref="Pc"/>) sai do ANDROID_ID, com um prefixo próprio no hash. Assim dois dispositivos da mesma conta
 /// (o PC e o celular, ou dois celulares) têm diários separados no servidor; a conta só os liga à mesma pessoa, e o servidor a tira do token, nunca do pacote.
 /// </para>
-/// Nada sobe antes de a pessoa responder ao aviso do diagnóstico (<see cref="Respondido"/>), e nada sobe com ele desligado (<see cref="Ligado"/>).
-/// O app Windows, desligado, ainda manda um diagnóstico anônimo; o celular ainda não tem esse modo.
+/// Vem ligado (<see cref="Ligado"/>); o aviso no Ao vivo (<see cref="Respondido"/>) explica e oferece desligar. Desligado é desligado de verdade:
+/// nenhuma sessão é aberta, nada é gravado nem enviado, as threads ficam paradas e o que ainda não tinha subido é apagado do celular.
 /// </summary>
 static class Telemetria
 {
@@ -35,7 +35,9 @@ static class Telemetria
     static Func<string?>? _servidor;
     static Func<string>? _apelido;
     static int _ritmoAtivo = 5, _ritmoParado = 60;
-    static bool _iniciada;
+    static bool _iniciada, _threads;
+    static volatile bool _perfilAFazer;
+    static Context _app = null!;
     static bool _jaLogouOk;
     static DateTime _ultimoAvisoLog = DateTime.MinValue;
 
@@ -46,24 +48,31 @@ static class Telemetria
     public static string? UltimoErro { get; private set; }
     public static DateTime? UltimoOk { get; private set; }
 
-    /// <summary>A pessoa já viu o aviso do diagnóstico (antes disso, grava no celular mas nada sobe).</summary>
+    /// <summary>A pessoa já viu o aviso do diagnóstico (só decide se o aviso aparece; o envio segue <see cref="Ligado"/>).</summary>
     public static bool Respondido
     {
         get => _prefs.GetBoolean("diagnostico_respondido", false);
-        set { _prefs.Edit()!.PutBoolean("diagnostico_respondido", value)!.Apply(); if (value) _acordar.Set(); }
+        set => _prefs.Edit()!.PutBoolean("diagnostico_respondido", value)!.Apply();
     }
 
-    /// <summary>Enviar diagnóstico (aba Conta). Desligado, nada sobe.</summary>
+    /// <summary>Diagnóstico (aba Conta), ligado por padrão. Desligar para tudo e apaga o que ainda estava no celular; ligar abre uma sessão nova.</summary>
     public static bool Ligado
     {
         get => _prefs.GetBoolean("diagnostico_ligado", true);
-        set { _prefs.Edit()!.PutBoolean("diagnostico_ligado", value)!.Apply(); LogApp.Info($"[telemetria] diagnóstico {(value ? "ligado" : "desligado")} pela pessoa."); if (value) _acordar.Set(); }
+        set
+        {
+            if (!_iniciada || value == Ligado) return;
+            _prefs.Edit()!.PutBoolean("diagnostico_ligado", value)!.Apply();
+            if (value) { Ligar(); LogApp.Info("[telemetria] diagnóstico ligado pela pessoa."); }
+            else Desligar();
+        }
     }
 
     public const string TextoDoAviso =
         "O Streemu manda diagnóstico para a equipe consertar bugs: o log do app, dados do celular (modelo, chip, Android, memória, tela, rede) e as " +
         "métricas das lives que você assiste, ligados à sua conta. Sem IP, sem senhas, sem nada das suas outras apps. Só a equipe lê, e os logs ficam " +
-        "guardados 120 dias. Você pode desligar na aba Conta e pedir para apagar tudo.";
+        "guardados 120 dias. Vem ligado, e você pode desligar a qualquer momento na aba Conta. Desligado, nada é gravado nem enviado, e o que ainda " +
+        "não tinha subido é apagado do celular. Para apagar o que já foi enviado, peça à equipe.";
 
     public static void Iniciar(Context c, Func<bool, Task<string?>> token, Func<string?> servidor, Func<string> apelido)
     {
@@ -71,9 +80,19 @@ static class Telemetria
         _iniciada = true;
         _prefs = c.GetSharedPreferences("streemu", FileCreationMode.Private)!;
         _token = token; _servidor = servidor; _apelido = apelido;
+        _app = c.ApplicationContext!;
         _raiz = System.IO.Path.Combine(c.FilesDir!.AbsolutePath, "telemetria");
+        LogApp.Line += l => _atual?.Linha(l);
+        if (Ligado) Ligar();
+        else _ = Task.Run(ApagarPendentes);   // desligado numa abertura anterior: não pode sobrar nada
+    }
+
+    /// <summary>Abre a sessão desta abertura e liga as threads (só na primeira vez). Roda na thread principal.</summary>
+    static void Ligar()
+    {
+        if (_atual != null) return;
         Directory.CreateDirectory(_raiz);
-        string androidId = Android.Provider.Settings.Secure.GetString(c.ContentResolver, Android.Provider.Settings.Secure.AndroidId) ?? "";
+        string androidId = Android.Provider.Settings.Secure.GetString(_app.ContentResolver, Android.Provider.Settings.Secure.AndroidId) ?? "";
         if (androidId.Length < 8) androidId = _prefs.GetString("telemetria_id_reserva", null) ?? Guid.NewGuid().ToString("N");
         _prefs.Edit()!.PutString("telemetria_id_reserva", androidId)!.Apply();
         Pc = Hash("streemu-android:" + androidId.ToLowerInvariant());
@@ -85,14 +104,37 @@ static class Telemetria
             if (s is { Aberta: true }) { s.Aberta = false; s.Evento("sessao_sem_fim", null); s.Salvar(); Descarregar(new Dictionary<string, StringBuilder>()); }
         }
         _atual = Sessao.Nova(_raiz);
-        LogApp.Line += l => _atual?.Linha(l);
         var agora = DateTimeOffset.Now;
         LogApp.Info($"Log de {agora:yyyy-MM-dd}, fuso UTC{agora:zzz} (agora são {agora.UtcDateTime:HH:mm:ss} UTC). Dispositivo da telemetria {Pc}.");
         _atual.Evento("sessao_inicio", new JsonObject { ["versao"] = Program.Version, ["canal"] = Canal, ["plataforma"] = "android" });
+        _perfilAFazer = true;
+        _acordar.Set();
+        if (_threads) return;
+        _threads = true;
         // tudo o que pesa (o perfil lista os decodificadores; o envio comprime e sobe) roda numa thread de prioridade de fundo, fora da tela e da live
-        var app = c.ApplicationContext!;
-        new Thread(() => { Fundo(); GravarPerfil(app); LogApp.Info("[telemetria] perfil do celular pronto; envio ligado."); Laco(); }) { IsBackground = true, Name = "telemetria" }.Start();
+        new Thread(() => { Fundo(); Laco(); }) { IsBackground = true, Name = "telemetria" }.Start();
         new Thread(Gravador) { IsBackground = true, Name = "telemetria-disco" }.Start();
+    }
+
+    /// <summary>Para de gravar na hora e apaga, em fundo, o que ainda não tinha subido. Roda na thread principal.</summary>
+    static void Desligar()
+    {
+        _atual = null;
+        _perfilAFazer = false;
+        _perfilPendente = null;
+        _acordar.Set();
+        _ = Task.Run(ApagarPendentes);
+    }
+
+    /// <summary>Espera um envio em curso terminar (_gate) e apaga as sessões guardadas. Se a pessoa religou nesse meio-tempo, nada é apagado.</summary>
+    static void ApagarPendentes()
+    {
+        lock (_gate) lock (_disco)
+        {
+            if (Ligado) return;
+            while (_fila.TryDequeue(out _)) { }
+            try { if (Directory.Exists(_raiz)) Directory.Delete(_raiz, true); } catch { }
+        }
     }
 
     public static void Evento(string tipo, JsonObject? campos = null) { _atual?.Evento(tipo, campos); if (tipo is "live" or "live_fim" or "midia_falha") _acordar.Set(); }
@@ -118,11 +160,12 @@ static class Telemetria
     {
         try
         {
+            if (_atual is not { } atual) return;
             var perfil = new JsonObject { ["estavel"] = Aparelho.PerfilEstavel(c), ["momento"] = Aparelho.PerfilMomento(c) };
             string hash = Hash(perfil["estavel"]!.ToJsonString());
-            File.WriteAllText(System.IO.Path.Combine(_atual!.Dir, $"perfil-{hash}.json"), Limpar(perfil.ToJsonString()));
+            File.WriteAllText(System.IO.Path.Combine(atual.Dir, $"perfil-{hash}.json"), Limpar(perfil.ToJsonString()));
             string? antes = _prefs.GetString("perfil_hash", null);
-            if (antes != hash) _atual.Evento("perfil", new JsonObject { ["hash"] = hash, ["antes"] = antes });
+            if (antes != hash) atual.Evento("perfil", new JsonObject { ["hash"] = hash, ["antes"] = antes });
             // o índice do servidor recebe o perfil no cabeçalho do pacote só quando ele muda (como o Windows)
             if (_prefs.GetString("perfil_hash_aceito", null) != hash) _perfilPendente = (perfil, hash);
             _prefs.Edit()!.PutString("perfil_hash", hash)!.Apply();
@@ -189,6 +232,8 @@ static class Telemetria
         int falhas = 0;
         while (true)
         {
+            if (!Ligado) { _acordar.WaitOne(); continue; }   // desligado: parada até alguém ligar
+            if (_perfilAFazer) { _perfilAFazer = false; GravarPerfil(_app); LogApp.Info("[telemetria] perfil do celular pronto; envio ligado."); }
             int espera;
             try
             {
@@ -217,12 +262,13 @@ static class Telemetria
     {
         lock (_gate)
         {
+            if (!Ligado || _atual == null) return true;
             Descarregar(new Dictionary<string, StringBuilder>());
             Arrumar();
-            if (!Respondido || !Ligado) return true;   // grava no celular, não sobe
             if (_servidor?.Invoke() is not { Length: > 0 } servidor) return true;   // sem conta: espera
             for (int i = 0; i < 20; i++)
             {
+                if (!Ligado) return true;
                 var (pecas, eventos, mais) = Montar();
                 if (pecas.Count == 0 && eventos.Count == 0 && _perfilPendente == null && i > 0) return true;
                 if (!Mandar(servidor, pecas, eventos)) return false;

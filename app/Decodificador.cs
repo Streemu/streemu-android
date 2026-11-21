@@ -73,14 +73,26 @@ sealed class Decodificador : IDisposable
         fmt.SetByteBuffer("csd-1", ByteBuffer.Wrap(pps));
         if (OperatingSystem.IsAndroidVersionAtLeast(30)) fmt.SetInteger(MediaFormat.KeyLowLatency, 1);
         fmt.SetInteger(MediaFormat.KeyPriority, 0);   // tempo real
+        fmt.SetInteger(MediaFormat.KeyMaxInputSize, 4 << 20);   // quadro-chave de 1440p/4K com bitrate alto passa do padrão de alguns fabricantes
         var codec = MediaCodec.CreateDecoderByType(MediaFormat.MimetypeVideoAvc);
-        Nome = codec.Name;
-        ChavesDoFabricante = ChavesDeBaixaLatencia(fmt, Nome);
-        codec.Configure(fmt, _surface, null, MediaCodecConfigFlags.None);
-        // aviso de "quadro foi para a tela" numa thread própria (precisa de Looper)
-        if (_threadAvisos == null) { _threadAvisos = new Android.OS.HandlerThread("dec-avisos"); _threadAvisos.Start(); }
-        codec.SetOnFrameRenderedListener(new AvisoDeTela(this), new Android.OS.Handler(_threadAvisos.Looper!));
-        codec.Start();
+        try
+        {
+            Nome = codec.Name;
+            ChavesDoFabricante = ChavesDeBaixaLatencia(fmt, Nome);
+            codec.Configure(fmt, _surface, null, MediaCodecConfigFlags.None);
+            // aviso de "quadro foi para a tela" numa thread própria (precisa de Looper)
+            if (_threadAvisos == null) { _threadAvisos = new Android.OS.HandlerThread("dec-avisos"); _threadAvisos.Start(); }
+            codec.SetOnFrameRenderedListener(new AvisoDeTela(this), new Android.OS.Handler(_threadAvisos.Looper!));
+            codec.Start();
+        }
+        catch
+        {
+            // SPS absurdo ou decodificador recusou: sem isto, cada nova tentativa vazava um MediaCodec
+            _sps = null;
+            try { codec.Release(); } catch { }
+            codec.Dispose();
+            throw;
+        }
         _codec = codec;
         _parar = false;
         Streemu.Util.Log.Info($"Decodificador {Nome}: {w}x{h}, baixa latência do Android {(OperatingSystem.IsAndroidVersionAtLeast(30) ? "pedida" : "indisponível (antes do Android 11)")}, " +
@@ -129,6 +141,15 @@ sealed class Decodificador : IDisposable
                 while ((i = codec.DequeueInputBuffer(10_000)) < 0) if (_parar) return;
                 var buf = codec.GetInputBuffer(i)!;
                 buf.Clear();
+                if (q.Dados.Length > buf.Capacity())
+                {
+                    // quadro maior que o buffer do decodificador: o Put lançaria e esta thread morreria (vídeo parado de vez).
+                    // Devolve o buffer vazio e espera o próximo quadro-chave.
+                    codec.QueueInputBuffer(i, 0, 0, 0, MediaCodecBufferFlags.None);
+                    _esperandoChave = true;
+                    Streemu.Util.Log.Info($"Quadro de {q.Dados.Length} bytes maior que o buffer do decodificador ({buf.Capacity()}); esperando o próximo quadro-chave.");
+                    continue;
+                }
                 buf.Put(q.Dados);
                 long us = q.Pts >= 0 ? q.Pts * 100 / 9 : 0;
                 if (Interlocked.Increment(ref _logEntrada) <= 3) Android.Util.Log.Info("Streemu", $"Entrada crua: pts90k {q.Pts}, enviado {us} µs");

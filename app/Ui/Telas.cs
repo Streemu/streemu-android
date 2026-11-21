@@ -39,7 +39,7 @@ static class Telas
         var giro = new ProgressBar(c) { Indeterminate = true };
         giro.IndeterminateTintList = Android.Content.Res.ColorStateList.ValueOf(Tema.Destaque);
         col.AddView(giro, Tema.Lp(Tema.Dp(c, 40), Tema.Dp(c, 40)));
-        var t = Tema.Texto(c, sala?.Status ?? "Escolha um grupo.", 15, Tema.TextoApagado);
+        var t = Tema.Texto(c, sala?.Status ?? (Sessao.AguardandoAtualizacao ? "Procurando atualização…" : "Escolha um grupo."), 15, Tema.TextoApagado);
         t.Gravity = GravityFlags.Center;
         t.SetPadding(0, Tema.Dp(c, 16), 0, 0);
         col.AddView(t);
@@ -54,6 +54,8 @@ static class Telas
         var col = Tema.Coluna(c);
         int m = Margem(c);
         col.SetPadding(m, 0, m, m);
+        if (Atualizacao.Disponivel is { } nova) col.AddView(AvisoDaAtualizacao(c, nova));
+        if (Atualizacao.BloqueiaSala) return Rolagem(c, col);
         if (!Telemetria.Respondido) col.AddView(AvisoDoDiagnostico(c));
         if (sala is not { Connected: true } && sala?.Members.Count is null or 0) { col.AddView(EsperandoSala(c, sala)); return Rolagem(c, col); }
 
@@ -85,9 +87,40 @@ static class Telas
         return Rolagem(c, col);
     }
 
+    internal static View AvisoDaAtualizacao(Context c, VersaoDisponivel nova)
+    {
+        var cartao = Tema.Coluna(c);
+        cartao.Background = Tema.Forma(c, Tema.Selecionado, 16);
+        cartao.SetPadding(Tema.Dp(c, 16), Tema.Dp(c, 14), Tema.Dp(c, 16), Tema.Dp(c, 12));
+        cartao.LayoutParameters = new LinearLayout.LayoutParams(Tema.Cheio, Tema.Ajusta) { TopMargin = Tema.Dp(c, 12) };
+        cartao.AddView(Tema.Texto(c, $"Versão nova · {nova.Versao}", 16, negrito: true));
+        if (nova.Obrigatoria)
+            cartao.AddView(Tema.Texto(c, "Atualize para entrar na sala do grupo.", 14, Tema.DestaqueSuave));
+        if (!string.IsNullOrWhiteSpace(nova.Notas))
+        {
+            var notas = Tema.Texto(c, nova.Notas, 14, Tema.TextoApagado);
+            notas.SetPadding(0, Tema.Dp(c, 8), 0, Tema.Dp(c, 10));
+            cartao.AddView(notas);
+        }
+        var botoes = Tema.Linha(c, GravityFlags.CenterVertical | GravityFlags.End);
+        if (!nova.Obrigatoria)
+        {
+            var depois = Tema.Botao(c, "Depois", principal: false);
+            depois.Enabled = Atualizacao.PodeAdiar;
+            depois.Click += (_, _) => Atualizacao.Depois();
+            botoes.AddView(depois);
+        }
+        var atualizar = Tema.Botao(c, Atualizacao.Rotulo);
+        atualizar.Enabled = !Atualizacao.Ocupado;
+        atualizar.Click += (_, _) => Atualizacao.Atualizar();
+        botoes.AddView(atualizar, new LinearLayout.LayoutParams(Tema.Ajusta, Tema.Ajusta) { LeftMargin = Tema.Dp(c, 8) });
+        cartao.AddView(botoes);
+        return cartao;
+    }
+
     /// <summary>
-    /// O aviso do diagnóstico, no topo da aba Ao vivo até a pessoa responder (como a faixa do app Windows): nada do diagnóstico sobe antes.
-    /// "Entendi" liga; "Desligar" desliga (dá para mudar depois na aba Conta).
+    /// O aviso do diagnóstico, no topo da aba Ao vivo até a pessoa responder (como a faixa do app Windows). O diagnóstico vem ligado:
+    /// "Entendi" mantém; "Desligar" desliga de vez (dá para mudar depois na aba Conta).
     /// </summary>
     static View AvisoDoDiagnostico(Context c)
     {
@@ -128,6 +161,7 @@ static class Telas
         k.AddView(botoes, Tema.Lp(Tema.Cheio, Tema.Ajusta));
         return k;
     }
+
 
     static View CartaoDeLive(Context c, Member m, Action<Member> assistir)
     {
@@ -230,6 +264,11 @@ static class Telas
         var col = Tema.Coluna(c);
         int m = Margem(c);
         col.SetPadding(m, 0, m, m);
+        if (Atualizacao.BloqueiaSala && Atualizacao.Disponivel is { } nova)
+        {
+            col.AddView(AvisoDaAtualizacao(c, nova));
+            return Rolagem(c, col);
+        }
         if (sala is not { Connected: true } && sala?.Members.Count is null or 0) { col.AddView(EsperandoSala(c, sala)); return Rolagem(c, col); }
 
         var online = sala!.Friends.OrderByDescending(f => f.Live != null).ThenBy(f => f.Nick, StringComparer.CurrentCultureIgnoreCase).ToList();
@@ -387,8 +426,7 @@ static class Telas
         void Mostrar()
         {
             chave.Ligada = Telemetria.Ligado;
-            estadoDiag.Text = !Telemetria.Ligado ? "Desligado: nada sai do celular"
-                            : !Telemetria.Respondido ? "Esperando você responder ao aviso no Ao vivo"
+            estadoDiag.Text = !Telemetria.Ligado ? "Desligado: nada é gravado nem enviado"
                             : Telemetria.UltimoErro is { } e ? "Último envio falhou: " + e
                             : Telemetria.UltimoOk is { } ok ? $"Ligado · último envio às {ok:HH:mm}" : "Ligado";
         }
@@ -402,7 +440,11 @@ static class Telas
 
         col.AddView(TituloDeSecao(c, "Sobre"));
         var sobre = Cartao(c);
-        sobre.AddView(LinhaSimples(c, "Streemu para Android · protótipo\nAssiste às lives do grupo com vídeo e som, direto do PC de quem transmite."));
+        sobre.AddView(LinhaSimples(c, $"Streemu para Android · {Atualizacao.VersaoInstalada}"));
+        var procurar = Tema.Botao(c, "Procurar atualização", principal: false);
+        procurar.Enabled = !Atualizacao.Ocupado;
+        procurar.Click += (_, _) => Atualizacao.Verificar(manual: true);
+        sobre.AddView(procurar);
         col.AddView(sobre);
 
         var sairB = Tema.Botao(c, "Sair da conta", principal: false);
