@@ -585,7 +585,9 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
                     if (n == Srt.Erro)
                     {
                         string e = Srt.UltimoErro;
-                        if (e.Contains("timeout", StringComparison.OrdinalIgnoreCase) || e.Contains("again", StringComparison.OrdinalIgnoreCase)) continue;
+                        // a libsrt escreve "transmission timed out" (não "timeout"): sem o "timed out", 3 s sem bytes derrubavam e reabriam o SRT
+                        if (e.Contains("timeout", StringComparison.OrdinalIgnoreCase) || e.Contains("timed out", StringComparison.OrdinalIgnoreCase)
+                            || e.Contains("again", StringComparison.OrdinalIgnoreCase)) continue;
                         throw new InvalidOperationException("SRT recv: " + e);
                     }
                     _demux.Alimentar(buf.AsSpan(0, n));
@@ -745,7 +747,7 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
         base.OnDestroy();
     }
 
-    static IPAddress? IpLocal()
+    internal static IPAddress? IpLocal()
     {
         try
         {

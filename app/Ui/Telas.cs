@@ -3,6 +3,7 @@ using Android.Graphics;
 using Android.Views;
 using Android.Widget;
 using Streemu.Net;
+using Streemu.Proto.Transmissao;
 
 namespace Streemu.Proto.Ui;
 
@@ -59,7 +60,7 @@ static class Telas
 
     // ================================================================================================ Ao vivo
 
-    public static ScrollView AoVivo(Context c, Action<Member> assistir, Action criarGrupo, Action entrarComConvite)
+    public static ScrollView AoVivo(Context c, Action<Member> assistir, Action criarGrupo, Action entrarComConvite, Action transmitir, Action pararTransmissao, Action<int> escolherQualidade)
     {
         var sala = Sessao.Sala;
         var col = Tema.Coluna(c);
@@ -68,6 +69,7 @@ static class Telas
         if (Atualizacao.Disponivel is { } nova) col.AddView(AvisoDaAtualizacao(c, nova));
         if (Atualizacao.BloqueiaSala) return Rolagem(c, col);
         if (!Telemetria.Respondido) col.AddView(AvisoDoDiagnostico(c));
+        col.AddView(CartaoDeTransmissao(c, sala, transmitir, pararTransmissao, escolherQualidade));
         if (sala is not { Connected: true } && sala?.Members.Count is null or 0) { col.AddView(EsperandoSala(c, sala, criarGrupo, entrarComConvite)); return Rolagem(c, col); }
 
         var lives = sala!.Friends.Where(f => f.Live != null).OrderBy(f => f.Live!.SinceUnixMs).ToList();
@@ -96,6 +98,93 @@ static class Telas
             linha!.AddView(CartaoDeLive(c, lives[i], assistir), lp);
         }
         return Rolagem(c, col);
+    }
+
+    /// <summary>
+    /// "Transmitir a tela", no topo da aba Ao vivo. Parado: a qualidade (três escolhas), o aviso do som e o botão. Ao vivo: quantos assistem e "Parar transmissão".
+    /// Bloqueado sem a sala do grupo conectada.
+    /// </summary>
+    static View CartaoDeTransmissao(Context c, GroupRoom? sala, Action transmitir, Action parar, Action<int> escolherQualidade)
+    {
+        bool aoVivo = ServicoTransmissao.AoVivo, preparando = ServicoTransmissao.Preparando;
+        bool conectada = sala is { Connected: true };
+        var k = Tema.Coluna(c);
+        k.Background = Tema.Forma(c, Tema.Cartao, 16, aoVivo ? Tema.AoVivo : Tema.Borda);
+        k.SetPadding(Tema.Dp(c, 16), Tema.Dp(c, 14), Tema.Dp(c, 16), Tema.Dp(c, 14));
+        var lp = Tema.Lp(Tema.Cheio, Tema.Ajusta);
+        lp.TopMargin = Tema.Dp(c, 12);
+        k.LayoutParameters = lp;
+
+        var topo = Tema.Linha(c);
+        if (aoVivo) topo.AddView(Tema.Selo(c, "AO VIVO", Tema.AoVivo));
+        var titulo = Tema.Texto(c, aoVivo ? "Você está transmitindo a tela" : "Transmitir a tela", 16, negrito: true);
+        titulo.SetPadding(aoVivo ? Tema.Dp(c, 10) : 0, 0, 0, 0);
+        topo.AddView(titulo);
+        k.AddView(topo);
+
+        if (aoVivo)
+        {
+            int n = ServicoTransmissao.Assistindo;
+            var q = Qualidade.Escolhida(c);
+            k.AddView(Tema.Texto(c, (n == 0 ? "Esperando amigos" : n == 1 ? "1 pessoa assistindo" : $"{n} pessoas assistindo") + " · " + q.Nome, 14, Tema.TextoApagado),
+                Tema.Lp(Tema.Cheio, Tema.Ajusta));
+            var botaoParar = Tema.Botao(c, "Parar transmissão", principal: false);
+            botaoParar.Click += (_, _) => parar();
+            var lpP = Tema.Lp(Tema.Cheio, Tema.Ajusta);
+            lpP.TopMargin = Tema.Dp(c, 12);
+            k.AddView(botaoParar, lpP);
+            return k;
+        }
+
+        var sub = Tema.Texto(c, "Mostre a tela do celular para o grupo, com o som do celular.", 14, Tema.TextoApagado);
+        sub.SetPadding(0, Tema.Dp(c, 4), 0, Tema.Dp(c, 10));
+        k.AddView(sub);
+
+        // a qualidade: três pílulas lado a lado (a escolha fica guardada)
+        int escolhida = Qualidade.IndiceEscolhido(c);
+        var pilulas = Tema.Linha(c);
+        for (int i = 0; i < Qualidade.Todas.Length; i++)
+        {
+            int indice = i;
+            bool atual = i == escolhida;
+            var p = Tema.Texto(c, Qualidade.Todas[i].Nome, 14, atual ? Tema.CorTexto : Tema.TextoApagado, negrito: true);
+            p.Gravity = GravityFlags.Center;
+            p.SetMinHeight(Tema.Dp(c, 40));
+            p.Background = Tema.Tocavel(c, atual ? Tema.Selecionado : Tema.Campo, 12, atual ? Tema.DestaqueSuave : null);
+            p.Clickable = true; p.Focusable = true;
+            p.Click += (_, _) => escolherQualidade(indice);
+            var lpPil = Tema.Lp(0, Tema.Ajusta, 1);
+            if (i > 0) lpPil.LeftMargin = Tema.Dp(c, 8);
+            pilulas.AddView(p, lpPil);
+        }
+        k.AddView(pilulas, Tema.Lp(Tema.Cheio, Tema.Ajusta));
+
+        var nota = Tema.Texto(c, "O som do celular vai junto se você permitir o áudio. Sem a permissão, a live sai só com imagem.", 12, Tema.TextoApagado);
+        nota.SetPadding(0, Tema.Dp(c, 10), 0, 0);
+        k.AddView(nota);
+
+        if (ServicoTransmissao.Erro is { } erro)
+        {
+            var e = Tema.Texto(c, erro, 13, Tema.Erro);
+            e.SetPadding(0, Tema.Dp(c, 8), 0, 0);
+            k.AddView(e);
+        }
+        if (!conectada)
+        {
+            var e = Tema.Texto(c, "Conecte-se ao grupo para transmitir.", 13, Tema.Aviso);
+            e.SetPadding(0, Tema.Dp(c, 8), 0, 0);
+            k.AddView(e);
+        }
+
+        var botao = Tema.Botao(c, preparando ? "Abrindo a transmissão..." : "Transmitir a tela");
+        bool pode = conectada && !preparando;
+        botao.Alpha = pode ? 1f : 0.5f;
+        botao.Enabled = pode;
+        botao.Click += (_, _) => { if (pode) transmitir(); };
+        var lpB = Tema.Lp(Tema.Cheio, Tema.Ajusta);
+        lpB.TopMargin = Tema.Dp(c, 12);
+        k.AddView(botao, lpB);
+        return k;
     }
 
     internal static View AvisoDaAtualizacao(Context c, VersaoDisponivel nova)

@@ -5,6 +5,7 @@ using Android.Views;
 using Android.Views.InputMethods;
 using Android.Widget;
 using Streemu.Net;
+using Streemu.Proto.Transmissao;
 using Streemu.Proto.Ui;
 using Logcat = Android.Util.Log;
 
@@ -101,6 +102,7 @@ public class MainActivity : Android.App.Activity
         if (_raiz == null) return;
         _visivel = true;
         Sessao.Mudou += MarcarRedesenho;
+        ServicoTransmissao.Mudou += MarcarRedesenho;
         Atualizacao.Mudou += RedesenharAtualizacao;
         // a miniatura de cada live: o PC manda a cada ~8 s enquanto alguém pede; pedir de novo a cada 20 s mantém o pedido vivo
         _miniaturas = new Timer(_ => { if (_aba == Aba.AoVivo) Sessao.PedirMiniaturas(true); }, null, 500, 20_000);
@@ -111,6 +113,7 @@ public class MainActivity : Android.App.Activity
     {
         _visivel = false;
         Sessao.Mudou -= MarcarRedesenho;
+        ServicoTransmissao.Mudou -= MarcarRedesenho;
         _miniaturas?.Dispose(); _miniaturas = null;
         Atualizacao.Mudou -= RedesenharAtualizacao;
         if (_raiz != null) Sessao.PedirMiniaturas(false);
@@ -447,7 +450,8 @@ public class MainActivity : Android.App.Activity
         _conteudo.RemoveAllViews();
         _telaAtual = _aba switch
         {
-            Aba.AoVivo => Telas.AoVivo(this, Assistir, () => Convites.PedirCriacao(this), () => Convites.PedirConvite(this)),
+            Aba.AoVivo => Telas.AoVivo(this, Assistir, () => Convites.PedirCriacao(this), () => Convites.PedirConvite(this),
+                                       Transmitir, ServicoTransmissao.Parar, i => { Qualidade.Escolher(this, i); MarcarRedesenho(); }),
             Aba.Grupo => Telas.Grupo(this, Assistir, () => Convites.PedirCriacao(this), () => Convites.PedirConvite(this),
                                      g => Convites.Convidar(this, g), g => Convites.ConfirmarSaidaDoGrupo(this, g)),
             _ => Telas.Conta(this, TrocarApelido, ConfirmarSaida),
@@ -464,6 +468,51 @@ public class MainActivity : Android.App.Activity
         if (_raiz != null && IsFinishing) Telemetria.Fechar();
         Convites.Fechar();
         base.OnDestroy();
+    }
+
+    // ================================================================================================ transmitir a tela
+
+    const int CodigoPermissoes = 41, CodigoProjecao = 42;
+
+    /// <summary>
+    /// "Transmitir a tela": primeiro as permissões (notificação no Android 13+, que o serviço em primeiro plano usa; áudio, que é opcional: sem ele a live sai só com imagem),
+    /// depois o pedido do Android para capturar a tela, e no resultado o serviço começa. A resposta das permissões não bloqueia nada: a captura segue com o que foi dado.
+    /// </summary>
+    void Transmitir()
+    {
+        if (Atualizacao.BloqueiaSala) { MostrarAtualizacao(); return; }
+        if (Sessao.Sala is not { Connected: true }) { Toast.MakeText(this, "Conecte-se ao grupo para transmitir.", ToastLength.Long)?.Show(); return; }
+        if (ServicoTransmissao.AoVivo || ServicoTransmissao.Preparando) return;
+        var faltam = new List<string>();
+        if (OperatingSystem.IsAndroidVersionAtLeast(33) && CheckSelfPermission("android.permission.POST_NOTIFICATIONS") != Permission.Granted) faltam.Add("android.permission.POST_NOTIFICATIONS");
+        if (CheckSelfPermission("android.permission.RECORD_AUDIO") != Permission.Granted) faltam.Add("android.permission.RECORD_AUDIO");
+        if (faltam.Count > 0) RequestPermissions(faltam.ToArray(), CodigoPermissoes);
+        else PedirProjecao();
+    }
+
+    public override void OnRequestPermissionsResult(int requestCode, string[] permissions, Permission[] grantResults)
+    {
+        base.OnRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == CodigoPermissoes) PedirProjecao();
+    }
+
+    void PedirProjecao()
+    {
+        try
+        {
+            var gerente = (Android.Media.Projection.MediaProjectionManager)GetSystemService(MediaProjectionService)!;
+            StartActivityForResult(gerente.CreateScreenCaptureIntent(), CodigoProjecao);
+        }
+        catch (Exception e) { Toast.MakeText(this, "Não deu para pedir a captura da tela: " + e.Message, ToastLength.Long)?.Show(); }
+    }
+
+    protected override void OnActivityResult(int requestCode, Result resultCode, Intent? data)
+    {
+        base.OnActivityResult(requestCode, resultCode, data);
+        if (requestCode != CodigoProjecao) return;
+        if (resultCode != Result.Ok || data == null) { Toast.MakeText(this, "A captura da tela não foi permitida.", ToastLength.Short)?.Show(); return; }
+        bool audio = CheckSelfPermission("android.permission.RECORD_AUDIO") == Permission.Granted;
+        ServicoTransmissao.Iniciar(this, (int)resultCode, data, Qualidade.IndiceEscolhido(this), audio);
     }
 
     void Assistir(Member m)

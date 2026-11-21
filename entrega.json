@@ -1,7 +1,7 @@
 {
-  "versao": "0.1.6",
-  "versionCode": 7,
-  "notas": "- Android: criar grupo, convidar e entrar pelo link de convite",
+  "versao": "0.1.7",
+  "versionCode": 8,
+  "notas": "- Android: transmitir a tela do celular para o grupo\n- Transmitir: só 60 fps (a 30 o decodificador Exynos segura ~90 ms)\n- Captura: passo OpenGL num relógio fixo (fps constante e IDR sempre, mesmo com a tela parada)\n- Transmitir: qualidade pelo lado menor; o player não derruba o SRT num timeout de leitura\n- Transmitir: tamanho da tela pelo DisplayManager (o cast do WindowManager quebrava no serviço)\n- Android transmite: captura de tela (H.264) e do som (Opus), com teste no Debug\n- Android transmite: anfitrião, serviço em primeiro plano e botão na aba Ao vivo\n- TsMux: multiplexador mpegts do celular e teste contra TsDemux e ffmpeg\n- Android transmite: contratos da captura e do mux TS (stubs)",
   "obrigatoria": false,
-  "privado": "dd62489d82c04158c355b365e11f9f0f0f2b0195"
+  "privado": "e3c9d3a079d2915328eb9027c92557c76b84c5a0"
 }

@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Android.Content;
 using Android.Graphics;
 using Streemu.Net;
+using Streemu.Proto.Transmissao;
 
 namespace Streemu.Proto;
 
@@ -157,9 +158,28 @@ static class Sessao
         {
             case "miniatura": Miniatura(msg); return;
             case "avatar": _ = AvatarAsync(de, msg); return;
-            case "avatar_pedir": case "miniatura_pedir": return;   // o celular não transmite nem tem avatar ainda
+            // a v1 de transmitir não manda miniatura nem avatar (o cartão do amigo fica sem imagem): o PC que pede não recebe resposta
+            case "avatar_pedir": case "miniatura_pedir": return;
+            // o lado de quem transmite (Anfitriao): quem quer assistir a esta live
+            case "quero_assistir":
+                if (Anfitriao.Ativo is { } ao) ao.AoReceber(de, apelido, msg);
+                else RecusarSemLive(de, msg);
+                return;
+            // "parar" e "reabrir_player" servem aos dois lados. Se a sessão é de um espectador da minha live, é do Anfitriao; senão segue para o player
+            // (que também confere a sessão: um "parar" de um espectador meu nunca fecha o meu próprio player por engano)
+            case "parar" or "reabrir_player" when Anfitriao.Ativo is { } host && host.TemSessao(Streemu.Util.JsonSeguro.Texto(msg["sessao"]) ?? ""):
+                host.AoReceber(de, apelido, msg);
+                return;
         }
         Mensagem?.Invoke(de, apelido, msg);
+    }
+
+    /// <summary>Pediram para assistir uma live minha que já acabou (a lista do amigo estava velha): responde "recusado", como o app Windows. Da minha própria conta, ignora (a sala entrega por conta).</summary>
+    static void RecusarSemLive(string de, JsonObject msg)
+    {
+        var sid = Streemu.Util.JsonSeguro.Texto(msg["sessao"]);
+        if (string.IsNullOrEmpty(sid) || de == Conta.ContaId || Sala is not { } sala) return;
+        _ = sala.SendTo(de, new JsonObject { ["tipo"] = "recusado", ["sessao"] = sid, ["motivo"] = "O celular já parou de transmitir." });
     }
 
     /// <summary>Tudo que vem de um amigo é tratado como não confiável: tamanho e dimensões conferidos antes de decodificar (limites do app no PC, spec 006).</summary>
