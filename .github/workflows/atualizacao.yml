@@ -10,6 +10,10 @@ on:
         description: 'Publicar uma pré-release na branch teste-atualizacao'
         type: boolean
         default: false
+      rascunho_oficial:
+        description: 'Compilar o APK oficial para teste sem publicar a release'
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -19,7 +23,10 @@ concurrency:
 
 jobs:
   atualizar:
-    if: (github.ref == 'refs/heads/main' && !inputs.pre_lancamento) || (github.ref == 'refs/heads/teste-atualizacao' && inputs.pre_lancamento)
+    if: >-
+      (github.ref == 'refs/heads/main' && !inputs.pre_lancamento && !inputs.rascunho_oficial) ||
+      (github.ref == 'refs/heads/teste-atualizacao' && inputs.pre_lancamento && !inputs.rascunho_oficial) ||
+      (github.ref == 'refs/heads/validar-oficial' && inputs.rascunho_oficial && !inputs.pre_lancamento)
     runs-on: windows-latest
     timeout-minutes: 45
     permissions:
@@ -30,6 +37,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       PRE_LANCAMENTO: ${{ inputs.pre_lancamento || false }}
       NDK_VERSION: '28.2.13676358'
+      RASCUNHO_OFICIAL: ${{ inputs.rascunho_oficial || false }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -206,10 +214,13 @@ jobs:
             $asset = $dados.assets | Where-Object { $_.name -eq $nome -and $_.state -eq 'uploaded' }
             if (!$dados.isDraft -or $asset.size -ne (Get-Item -LiteralPath $arquivo).Length) { throw "Arquivo ausente ou incompleto: $nome" }
           }
+          if ($env:RASCUNHO_OFICIAL -eq 'true') {
+            Write-Host 'Rascunho pronto para validar no Android.'
+            return
+          }
           if ($previa) {
             gh release edit $env:TAG --draft=false --prerelease --latest=false
           } else {
             gh release edit $env:TAG --draft=false --latest
           }
           if ($LASTEXITCODE -ne 0) { throw 'Não consegui publicar a release.' }
-
