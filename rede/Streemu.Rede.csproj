@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A rede do Streemu (túnel UDP, STUN, TURN, código de pareamento, relay local) sem nada do Windows, para o app Android usar.
+    Os arquivos de Net/ e Util/Log.cs são cópias do app Windows (ver README.md, seção "De onde veio"): mudar aqui é mudar lá também.
+    TargetFramework sem "-windows" de propósito: o analisador de plataforma (CA1416) acusa qualquer API só do Windows que entrar.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Streemu</RootNamespace>
+    <AssemblyName>Streemu.Rede</AssemblyName>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <!-- uma API só do Windows que escape vira erro, não aviso -->
+    <WarningsAsErrors>CA1416</WarningsAsErrors>
+  </PropertyGroup>
+
+</Project>

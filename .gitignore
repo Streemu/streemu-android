@@ -1,0 +1,6 @@
+bin/
+obj/
+*.user
+.vs/
+nativo/fontes/
+nativo/obj/

@@ -1,0 +1,17 @@
+root = true
+
+[*]
+charset = utf-8
+indent_style = space
+insert_final_newline = true
+
+[*.cs]
+indent_size = 4
+
+# PowerShell 5.1 lê arquivo sem BOM como ANSI e quebra os acentos: scripts com acento precisam de BOM
+[*.ps1]
+charset = utf-8-bom
+indent_size = 4
+
+[*.{md,js,json,toml,yml}]
+indent_size = 2

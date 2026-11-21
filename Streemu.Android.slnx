@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/app/">
+    <Project Path="app/Streemu.Proto.csproj" />
+  </Folder>
+  <Folder Name="/envio/">
+    <Project Path="envio/Streemu.Envio.csproj" />
+  </Folder>
+  <Folder Name="/rede/">
+    <Project Path="rede/Streemu.Rede.csproj" />
+  </Folder>
+  <Folder Name="/testes/" />
+  <Folder Name="/testes/Rede/">
+    <Project Path="testes/Rede/Rede.Testes.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Etapa 3 do protótipo: o celular assistindo o PC. Tunnel (rede compartilhada) -> LocalRelay -> libsrt -> demux TS -> MediaCodec -> Surface. Só vídeo. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Streemu.Proto</RootNamespace>
+    <ApplicationId>br.com.streemu.proto</ApplicationId>
+    <ApplicationTitle>Streemu</ApplicationTitle>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>0.1</ApplicationDisplayVersion>
+    <!-- arm64 e também 32 bits (armeabi-v7a): celulares de entrada com Android Go ou sistema de 32 bits só instalam com ele.
+         O libsrt de cada um sai do nativo/compilar-srt.ps1 -Abis arm64-v8a,armeabi-v7a -->
+    <RuntimeIdentifiers>android-arm64;android-arm</RuntimeIdentifiers>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <TrimMode>full</TrimMode>
+  </PropertyGroup>
+  <!-- JDK e SDK do Android Studio nos lugares padrão, quando não vierem de fora (-p:JavaSdkDirectory=... / -p:AndroidSdkDirectory=...) -->
+  <PropertyGroup>
+    <JavaSdkDirectory Condition="'$(JavaSdkDirectory)' == '' And Exists('$(ProgramW6432)\Android\Android Studio\jbr\bin\java.exe')">$(ProgramW6432)\Android\Android Studio\jbr</JavaSdkDirectory>
+    <AndroidSdkDirectory Condition="'$(AndroidSdkDirectory)' == '' And Exists('$(LOCALAPPDATA)\Android\Sdk\platform-tools')">$(LOCALAPPDATA)\Android\Sdk</AndroidSdkDirectory>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../rede/Streemu.Rede.csproj" />
+    <!-- lib/arm64-v8a/libsrt.so (nativo/compilar-srt.ps1) entra sozinho: o .NET for Android empacota lib/<abi>/*.so por convenção -->
+  </ItemGroup>
+</Project>
