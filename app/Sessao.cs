@@ -92,7 +92,8 @@ static class Sessao
     {
         var s = Sala;
         Sala = null;
-        s?.Dispose();
+        // o Dispose da sala espera o WebSocket fechar (até ~0,8 s): fora da thread da tela, que chama isto ao trocar de grupo e ao sair da conta
+        if (s != null) _ = Task.Run(() => { try { s.Dispose(); } catch (Exception e) { Streemu.Util.Log.Info("[sala] fechar: " + e.Message); } });
         lock (_gate) { _miniaturas.Clear(); _avataresPedidos.Clear(); }
     }
 

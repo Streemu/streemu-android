@@ -14,6 +14,12 @@ public sealed class LocalRelay : IDisposable
     readonly Socket _sock;
     readonly string _name;
     volatile IPEndPoint? _learned;
+    long _ultimoDoAprendidoMs;
+    /// <summary>
+    /// Sem pacote do processo aprendido por este tempo, aceita outra origem (o SRT reabriu com outra porta). Antes disso, outra origem é ignorada:
+    /// qualquer app do celular pode mandar UDP para 127.0.0.1, e sem esta trava tomaria o lugar do SRT e receberia o fluxo da live.
+    /// </summary>
+    const long TrocaDeOrigemMs = 1000;   // o SRT repete o handshake por até 10 s (conntimeo): a porta nova entra no máximo 1 s depois
 
     public int Port { get; }
     /// <summary>Destino fixo (ffmpeg em modo listener). Se nulo, responde para quem mandou por último (ffplay em modo caller).</summary>
@@ -51,7 +57,19 @@ public sealed class LocalRelay : IDisposable
             try { n = _sock.ReceiveFrom(buf, ref from); }
             catch (SocketException) { continue; }
             catch (ObjectDisposedException) { break; }
-            if (FixedTarget == null) _learned = (IPEndPoint)from;
+            if (FixedTarget == null)
+            {
+                var ep = (IPEndPoint)from;
+                long agora = Environment.TickCount64;
+                var atual = _learned;
+                if (atual == null || atual.Equals(ep) || agora - Interlocked.Read(ref _ultimoDoAprendidoMs) > TrocaDeOrigemMs)
+                {
+                    if (atual != null && !atual.Equals(ep)) Log.Info($"relay {_name}: o processo local trocou de porta ({atual.Port} -> {ep.Port})");
+                    _learned = ep;
+                    Interlocked.Exchange(ref _ultimoDoAprendidoMs, agora);
+                }
+                else continue;   // outra origem enquanto o processo aprendido está vivo
+            }
             PacketFromProcess?.Invoke();
             Outgoing?.Invoke(buf.AsSpan(0, n));
         }

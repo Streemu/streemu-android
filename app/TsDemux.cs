@@ -125,12 +125,16 @@ sealed class TsDemux
     static long Pts(ReadOnlySpan<byte> b) =>
         ((long)(b[0] & 0x0E) << 29) | ((long)b[1] << 22) | ((long)(b[2] & 0xFE) << 14) | ((long)b[3] << 7) | ((long)b[4] >> 1);
 
+    /// <summary>A seção da PAT/PMT. Malformada (curta demais para o cabeçalho), devolve vazia: antes lançava e o SRT reabria a cada pacote ruim.</summary>
     static ReadOnlySpan<byte> Secao(ReadOnlySpan<byte> carga, out int fim)
     {
+        fim = 0;
+        if (carga.Length < 1) return default;
         int ponteiro = carga[0];
+        if (1 + ponteiro + 3 > carga.Length) return default;
         var s = carga[(1 + ponteiro)..];
         int len = ((s[1] & 0x0F) << 8) | s[2];
-        fim = Math.Min(3 + len - 4, s.Length);   // sem o CRC
+        fim = Math.Clamp(3 + len - 4, 0, s.Length);   // sem o CRC
         return s;
     }
 
@@ -147,6 +151,7 @@ sealed class TsDemux
     void Pmt(ReadOnlySpan<byte> carga)
     {
         var s = Secao(carga, out int fim);
+        if (s.Length < 12) return;
         int i = 12 + (((s[10] & 0x0F) << 8) | s[11]);
         while (i + 5 <= fim)
         {

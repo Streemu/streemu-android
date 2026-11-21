@@ -13,10 +13,21 @@ namespace Streemu.Proto;
 sealed class Decodificador : IDisposable
 {
     readonly Surface _surface;
-    MediaCodec? _codec;
-    readonly BlockingCollection<(byte[] Dados, long Pts)> _fila = new(new ConcurrentQueue<(byte[], long)>(), 60);
+    /// <summary>
+    /// Um MediaCodec com a fila e as threads dele. Cada troca de SPS cria uma vida nova: as threads da anterior só enxergam a fila dela, então
+    /// não roubam o primeiro quadro-chave do decodificador novo nem continuam rodando depois de o codec ser liberado.
+    /// </summary>
+    sealed class Vida(MediaCodec codec)
+    {
+        public readonly MediaCodec Codec = codec;
+        public readonly BlockingCollection<(byte[] Dados, long Pts)> Fila = new(new ConcurrentQueue<(byte[], long)>(), 60);
+        public volatile bool Parar;
+        public Thread? Entrada, Saida;
+    }
+    Vida? _vida;
+    readonly object _gate = new();
+    volatile bool _descartado;
     readonly ConcurrentDictionary<long, long> _chegada = new();   // PTS em µs -> hora da chegada, para medir o tempo dentro do decodificador
-    volatile bool _parar;
     bool _esperandoChave = true;
     byte[]? _sps;
     int _logEntrada;
@@ -45,24 +56,28 @@ sealed class Decodificador : IDisposable
 
     public void Entregar(byte[] au, long pts90k)
     {
+        if (_descartado) return;
         Interlocked.Increment(ref Entregues);
         Chegou?.Invoke(pts90k, Streemu.Net.Tunnel.NowUs);
         if (_esperandoChave)
         {
             var (sps, pps, idr) = Nals(au);
             if (!idr || sps == null || pps == null) { Interlocked.Increment(ref DescartadosAteChave); return; }
-            if (_codec == null || (_sps != null && !sps.AsSpan().SequenceEqual(_sps))) Configurar(sps, pps);
+            if (_vida == null || (_sps != null && !sps.AsSpan().SequenceEqual(_sps)))
+                lock (_gate) { if (_descartado) return; Configurar(sps, pps); }
             _esperandoChave = false;
         }
-        if (!_fila.TryAdd((au, pts90k)))
+        if (_vida is not { } vida) return;
+        if (!vida.Fila.TryAdd((au, pts90k)))
         {
             // decodificador atrasado: jogar fora até o próximo quadro-chave (um P sem o anterior só gera sujeira na tela)
             Interlocked.Increment(ref DescartadosFilaCheia);
-            while (_fila.TryTake(out _)) { }
+            while (vida.Fila.TryTake(out _)) { }
             _esperandoChave = true;
         }
     }
 
+    /// <summary>Sob _gate: troca o decodificador. Quem chama já conferiu que não foi descartado.</summary>
     void Configurar(byte[] sps, byte[] pps)
     {
         Parar();
@@ -93,13 +108,15 @@ sealed class Decodificador : IDisposable
             codec.Dispose();
             throw;
         }
-        _codec = codec;
-        _parar = false;
+        var vida = new Vida(codec);
         Streemu.Util.Log.Info($"Decodificador {Nome}: {w}x{h}, baixa latência do Android {(OperatingSystem.IsAndroidVersionAtLeast(30) ? "pedida" : "indisponível (antes do Android 11)")}, " +
                                          $"do fabricante: {(ChavesDoFabricante.Length > 0 ? ChavesDoFabricante : "nenhuma conhecida")}.");
         Tamanho?.Invoke(w, h);
-        new Thread(() => LacoEntrada(codec)) { IsBackground = true, Name = "dec-entrada" }.Start();
-        new Thread(() => LacoSaida(codec)) { IsBackground = true, Name = "dec-saida" }.Start();
+        vida.Entrada = new Thread(() => LacoEntrada(vida)) { IsBackground = true, Name = "dec-entrada" };
+        vida.Saida = new Thread(() => LacoSaida(vida)) { IsBackground = true, Name = "dec-saida" };
+        _vida = vida;
+        vida.Entrada.Start();
+        vida.Saida.Start();
     }
 
     /// <summary>
@@ -130,15 +147,16 @@ sealed class Decodificador : IDisposable
         return string.Join(", ", ligadas);
     }
 
-    void LacoEntrada(MediaCodec codec)
+    void LacoEntrada(Vida vida)
     {
+        var codec = vida.Codec;
         try
         {
-            while (!_parar)
+            while (!vida.Parar)
             {
-                if (!_fila.TryTake(out var q, 100)) continue;
+                if (!vida.Fila.TryTake(out var q, 100)) continue;
                 int i;
-                while ((i = codec.DequeueInputBuffer(10_000)) < 0) if (_parar) return;
+                while ((i = codec.DequeueInputBuffer(10_000)) < 0) if (vida.Parar) return;
                 var buf = codec.GetInputBuffer(i)!;
                 buf.Clear();
                 if (q.Dados.Length > buf.Capacity())
@@ -157,16 +175,17 @@ sealed class Decodificador : IDisposable
                 codec.QueueInputBuffer(i, 0, q.Dados.Length, us, MediaCodecBufferFlags.None);
             }
         }
-        catch (Exception e) when (_parar) { _ = e; }
+        catch (Exception e) when (vida.Parar) { _ = e; }
         catch (Exception e) { Streemu.Util.Log.Info("ERRO: " + "entrada do decodificador: " + e); }
     }
 
-    void LacoSaida(MediaCodec codec)
+    void LacoSaida(Vida vida)
     {
+        var codec = vida.Codec;
         var info = new MediaCodec.BufferInfo();
         try
         {
-            while (!_parar)
+            while (!vida.Parar)
             {
                 int i = codec.DequeueOutputBuffer(info, 10_000);
                 if (i >= 0)
@@ -191,21 +210,29 @@ sealed class Decodificador : IDisposable
                 }
             }
         }
-        catch (Exception e) when (_parar) { _ = e; }
+        catch (Exception e) when (vida.Parar) { _ = e; }
         catch (Exception e) { Streemu.Util.Log.Info("ERRO: " + "saída do decodificador: " + e); }
     }
 
+    /// <summary>Sob _gate: para as threads da vida atual (cada uma acorda em até ~100 ms) e só então libera o codec.</summary>
     void Parar()
     {
-        _parar = true;
-        var c = _codec; _codec = null;
-        if (c == null) return;
-        Thread.Sleep(50);
-        try { c.Stop(); } catch { }
-        try { c.Release(); } catch { }
+        var v = _vida; _vida = null;
+        if (v == null) return;
+        v.Parar = true;
+        v.Entrada?.Join(300);
+        v.Saida?.Join(300);
+        try { v.Codec.Stop(); } catch { }
+        try { v.Codec.Release(); } catch { }
     }
 
-    public void Dispose() { Parar(); _threadAvisos?.QuitSafely(); }
+    /// <summary>Pode vir de qualquer thread, inclusive enquanto o SRT entrega um quadro: depois disto, Entregar não faz mais nada.</summary>
+    public void Dispose()
+    {
+        _descartado = true;
+        lock (_gate) Parar();
+        _threadAvisos?.QuitSafely();
+    }
 
     sealed class AvisoDeTela(Decodificador d) : Java.Lang.Object, MediaCodec.IOnFrameRenderedListener
     {

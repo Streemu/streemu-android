@@ -50,6 +50,8 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
     LocalRelay? _relay;
     Decodificador? _dec;
     Som? _som;
+    /// <summary>Cria e solta o decodificador e o som: sem isto, a thread do SRT podia criar um depois do OnDestroy, e ele tocava para sempre.</summary>
+    readonly object _midia = new();
     readonly TsDemux _demux = new();
     Surface? _surface;
     volatile bool _fechando, _tocando;
@@ -393,7 +395,14 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
             ["papel"] = "assiste", ["transmissao"] = live.StreamId, ["ligacao"] = sid, ["outro_apelido"] = _apelido, ["jogo"] = live.Game, ["qualidade"] = live.Quality,
             ["gatilho"] = tentativa == 1 ? "inicio" : "de_novo",
         });
-        await sala.SendTo(_conta, new JsonObject { ["tipo"] = "quero_assistir", ["sessao"] = sid, ["sala"] = live.StreamId, ["codigo"] = link.MyCode });
+        try { await sala.SendTo(_conta, new JsonObject { ["tipo"] = "quero_assistir", ["sessao"] = sid, ["sala"] = live.StreamId, ["codigo"] = link.MyCode }); }
+        catch (Exception e)
+        {
+            // sem isto a exceção sumia no Task e a tela ficava em "Preparando a conexão..." para sempre
+            EncerrarLigacao(avisar: false);
+            Esperando("Não deu para pedir a live.", e.Message, erro: true);
+            return;
+        }
         Esperando($"Esperando {_apelido} aceitar...");
         _ = Task.Delay(20_000).ContinueWith(_ => Ui(() =>
         {
@@ -430,7 +439,7 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
 
     void AoNaoEntregar(string para, JsonObject? msg) => Ui(() =>
     {
-        if (_link != null && para == _conta && msg?["sessao"]?.GetValue<string>() == _link.SessionId)
+        if (_link != null && para == _conta && Streemu.Util.JsonSeguro.Texto(msg?["sessao"]) == _link.SessionId)
         { EncerrarLigacao(avisar: false); Esperando($"{_apelido} saiu do grupo.", "", erro: true); }
     });
 
@@ -563,7 +572,11 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
                 while (!_fechando && (_surface == null || _tunel is not { State: TunnelState.Connected } || _relay == null)) Thread.Sleep(50);
                 if (_fechando) break;
                 var (tunel, relay) = (_tunel!, _relay!);
-                _dec ??= CriarDecodificador();
+                lock (_midia)
+                {
+                    if (_fechando) break;
+                    _dec ??= CriarDecodificador();
+                }
                 u = Srt.Conectar(relay.Port, tunel.Passphrase, LatenciaMs);
                 Streemu.Util.Log.Info("SRT conectado.");
                 while (!_fechando && _tunel == tunel)
@@ -601,8 +614,14 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
         d.NaTela += (pts, us) => { Tocando(); if (Atraso(pts, us) is double ms) _atrasoTela.Add(ms); };
         _demux.Quadro = d.Entregar;
         // o som abre no primeiro pacote de áudio, quando a PMT já disse quantos canais são
-        _demux.Audio = (pes, pts) => (_som ??= new Som(_demux.CanaisAudio) { Mudo = _mudo }).Entregar(pes, pts);
+        _demux.Audio = (pes, pts) => ObterSom()?.Entregar(pes, pts);
         return d;
+    }
+
+    Som? ObterSom()
+    {
+        if (_som is { } som) return som;
+        lock (_midia) return _fechando ? null : _som ??= new Som(_demux.CanaisAudio) { Mudo = _mudo };
     }
 
     /// <summary>Encaixa o vídeo na tela sem esticar (faixas pretas onde sobrar).</summary>
@@ -706,13 +725,22 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
         Telemetria.Ativo = false;
         FimDaLive("fechou o player");
         try { if (_redeCallback != null) _rede?.UnregisterNetworkCallback(_redeCallback); } catch { }
-        var link = _link;
-        if (link != null && Sessao.Sala is { } sala)
-            try { Task.Run(() => sala.SendTo(link.PeerId, new JsonObject { ["tipo"] = "parar", ["sessao"] = link.SessionId })).Wait(500); } catch { }
-        _dec?.Dispose();
-        _som?.Dispose();
-        link?.Dispose();
-        if (_codigoTeste != null) { _tunel?.Dispose(); _relay?.Dispose(); }
+        var link = Interlocked.Exchange(ref _link, null);
+        var sala = Sessao.Sala;
+        Decodificador? dec; Som? som;
+        lock (_midia) { dec = _dec; _dec = null; som = _som; _som = null; }
+        var (tunel, relay) = _codigoTeste != null ? (_tunel, _relay) : (null, null);
+        // tudo o que espera (o "parar" pela sala, o fim do TURN, as threads do som e do decodificador) sai da thread da tela:
+        // somado, passava de 2 s com rede ruim, e o Android acusava "o app não responde"
+        _ = Task.Run(async () =>
+        {
+            if (link != null && sala != null)
+                try { await sala.SendTo(link.PeerId, new JsonObject { ["tipo"] = "parar", ["sessao"] = link.SessionId }).WaitAsync(TimeSpan.FromMilliseconds(500)); } catch { }
+            try { dec?.Dispose(); } catch (Exception e) { Streemu.Util.Log.Info("[player] fechar o decodificador: " + e.Message); }
+            try { som?.Dispose(); } catch (Exception e) { Streemu.Util.Log.Info("[player] fechar o som: " + e.Message); }
+            try { link?.Dispose(); } catch (Exception e) { Streemu.Util.Log.Info("[player] fechar a ligação: " + e.Message); }
+            try { tunel?.Dispose(); relay?.Dispose(); } catch { }
+        });
         Atualizacao.PlayerFechou();
         base.OnDestroy();
     }

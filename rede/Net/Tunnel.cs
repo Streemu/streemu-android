@@ -302,10 +302,13 @@ public sealed class Tunnel : IDisposable
         _tag = hash[..4];
         Passphrase = Convert.ToHexString(hash, 4, 16).ToLowerInvariant();
         ChaveArquivo = SHA256.HashData(Encoding.ASCII.GetBytes("streemu-arquivo-v1").Concat(material).ToArray());
+        // o código vem do outro aparelho: fora do modo local, um endereço de loopback, multicast ou "qualquer" faria este celular mandar UDP
+        // para si mesmo (outros apps escutando em 127.0.0.1) ou para a rede inteira
+        if (!_localMode && !EnderecoDePar(code.Endpoint.Address)) throw new FormatException("o código aponta para um endereço que não é de outro aparelho");
         _peerCode = code;
         var cands = new List<Cand> { new(code.Endpoint, CandKind.Direct) };
-        if (code.Alt != null && !code.Alt.Equals(code.Endpoint)) cands.Add(new(code.Alt, CandKind.Direct));
-        if (code.Relay != null) cands.Add(new(code.Relay, CandKind.PeerRelay));
+        if (code.Alt != null && !code.Alt.Equals(code.Endpoint) && (_localMode || EnderecoDePar(code.Alt.Address))) cands.Add(new(code.Alt, CandKind.Direct));
+        if (code.Relay != null && (_localMode || EnderecoDePar(code.Relay.Address))) cands.Add(new(code.Relay, CandKind.PeerRelay));
         if (Turn?.Relayed != null) cands.Add(new(code.Endpoint, CandKind.ViaMyRelay));
         lock (_candGate) { _cands = cands.ToArray(); _candPong = new long[_cands.Length]; Array.Fill(_candPong, -1); }
         _target = cands[0];
@@ -317,9 +320,23 @@ public sealed class Tunnel : IDisposable
         SetState(TunnelState.Punching, $"Tentando conexão com {string.Join(" e ", cands.Select(c => c.ToString()))}...");
     }
 
+    /// <summary>Um endereço que pode ser de outro aparelho: não é loopback, multicast, broadcast nem "qualquer".</summary>
+    public static bool EnderecoDePar(IPAddress ip)
+    {
+        if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
+        if (IPAddress.IsLoopback(ip) || ip.Equals(IPAddress.Any) || ip.Equals(IPAddress.Broadcast) || ip.Equals(IPAddress.IPv6Any)) return false;
+        if (ip.AddressFamily == AddressFamily.InterNetwork)
+        {
+            byte b0 = ip.GetAddressBytes()[0];
+            return b0 != 0 && b0 < 224;   // 0.x e 224 em diante (multicast e reservados)
+        }
+        return !ip.IsIPv6Multicast;
+    }
+
     /// <summary>Acrescenta um caminho (ex.: o amigo avisou o endereço de relay dele depois do código).</summary>
     public void AddCandidate(IPEndPoint ep, CandKind kind, string why)
     {
+        if (!_localMode && !EnderecoDePar(ep.Address)) return;
         lock (_candGate)
         {
             if (_cands.Any(c => c.Ep.Equals(ep) && c.Kind == kind) || _cands.Length >= MaxCandidates) return;

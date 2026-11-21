@@ -81,9 +81,14 @@ public sealed class ContaLeve
         await _renovando.WaitAsync();
         try
         {
+            // quem esperou na fila (sala, telemetria e relay pedem juntos) usa o token que o primeiro acabou de renovar
+            lock (_gate) if (!forcar && _acesso != null && _acessoExpira - DateTimeOffset.UtcNow.ToUnixTimeSeconds() > 600) return _acesso;
+            if (!TemConta) return null;
             string segredo;
             try { segredo = Encoding.UTF8.GetString(_abrir(Convert.FromBase64String(_segredoCifrado!))); }
-            catch { Apagar(); return null; }
+            // só apaga quando o segredo não abre nunca mais; falha passageira (o Keystore subindo depois do boot) não desloga ninguém
+            catch (Exception e) when (e is CryptographicException or FormatException) { Apagar(); return null; }
+            catch (Exception) { return null; }
             var (st, j) = await Chamar(Servidor!, "/conta/renovar", new JsonObject { ["dispositivo"] = _dispositivo, ["segredo"] = segredo, ["apelido"] = _apelido });
             if (st == HttpStatusCode.OK && j?["acesso"] != null) { Guardar(j); lock (_gate) return _acesso; }
             if (j?["erro"]?.GetValue<string>() == "conta_invalida") Apagar();

@@ -1,7 +1,7 @@
 {
-    "versao":  "0.1.4",
-    "versionCode":  5,
-    "notas":  "- Primeira versão oficial do Streemu para Android.",
-    "obrigatoria":  false,
-    "privado":  "5226b4d47093a13e4ab0b6f0e0780ac49da5fbe7"
+  "versao": "0.1.5",
+  "versionCode": 6,
+  "notas": "- Android: fechar o player sem vazar nem travar, e mais travas de rede",
+  "obrigatoria": false,
+  "privado": "ddf7f90d6b39716a8d719d55b68cc8f755f07d96"
 }
