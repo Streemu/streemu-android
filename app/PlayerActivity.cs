@@ -16,16 +16,18 @@ using Logcat = Android.Util.Log;
 namespace Streemu.Proto;
 
 /// <summary>
-/// O player: pede para assistir pela sala do grupo (o mesmo pedido do app Windows, MainForm.Grupo.cs) e toca vídeo e som em tela cheia, deitado.
+/// O player: pede para assistir pela sala do grupo (o mesmo pedido do app Windows, MainForm.Grupo.cs) e toca vídeo e som em tela cheia.
 /// Os controles aparecem com um toque e somem sozinhos em 3 s. Se a rede do celular muda (Wi-Fi para 4G), pede de novo com uma ligação nova.
 /// No build Debug, a tela principal abre este player com o código do proto-envio, sem sala (o código do celular vai para
 /// o logcat como "MEU CÓDIGO").
 /// </summary>
-[Activity(Label = "Streemu", Exported = false, Theme = "@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen", ScreenOrientation = ScreenOrientation.SensorLandscape,
+[Activity(Label = "Streemu", Exported = false, Theme = "@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen", ScreenOrientation = ScreenOrientation.User,
           ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize | ConfigChanges.KeyboardHidden)]
 public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
 {
     const int LatenciaMs = 80;   // a mesma do app no PC
+
+    enum Enquadramento { Original, Ampliar, Preencher, Widescreen, Classico, Ultrawide, Vertical, Personalizado }
 
     // quem assiste (vem do Início)
     string _conta = "", _apelido = "", _sala = "", _jogo = "", _qualidade = "";
@@ -37,7 +39,11 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
     LinearLayout _espera = null!, _barra = null!, _botoes = null!, _acoesErro = null!;
     ProgressBar _giro = null!;
     TextView _estado = null!, _detalhe = null!, _numeros = null!;
-    ImageView _icSom = null!;
+    ImageView _icSom = null!, _icProporcao = null!, _icGirar = null!;
+    Android.App.AlertDialog? _editorProporcao;
+    Toast? _avisoControle;
+    Enquadramento _enquadramento;
+    (int Largura, int Altura)? _proporcaoPersonalizada;
     readonly Android.OS.Handler _ui = new(Android.OS.Looper.MainLooper!);
     readonly Java.Lang.Runnable _esconder;
     bool _controlesVisiveis, _mostrarNumeros, _mudo;
@@ -113,6 +119,11 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
         _video = new SurfaceView(this);
         _video.Holder!.AddCallback(this);
         _raiz.AddView(_video, new FrameLayout.LayoutParams(Tema.Cheio, Tema.Cheio, GravityFlags.Center));
+        _raiz.LayoutChange += (_, e) =>
+        {
+            if (e.Right - e.Left != e.OldRight - e.OldLeft || e.Bottom - e.Top != e.OldBottom - e.OldTop)
+                AjustarProporcao();
+        };
 
         // esperando: o Mumu com pipoca, quem vai assistir e o passo atual
         _espera = Tema.Coluna(this);
@@ -187,7 +198,21 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
         _botoes.SetPadding(Tema.Dp(this, 12), Tema.Dp(this, 12), Tema.Dp(this, 12), Tema.Dp(this, 12));
         var som = BotaoRedondo(Resource.Drawable.ic_som, "Sem som", AlternarSom);
         _icSom = (ImageView)som;
+        _icGirar = BotaoRedondo(Resource.Drawable.ic_girar, "Girar tela", GirarTela);
+        _icGirar.LongClick += (_, e) =>
+        {
+            e.Handled = true;
+            RequestedOrientation = ScreenOrientation.User;
+            AtualizarDescricaoRotacao();
+            AvisarControle("Rotação do sistema");
+            Controles(true);
+        };
+        AtualizarDescricaoRotacao();
+        _icProporcao = BotaoRedondo(Resource.Drawable.ic_proporcao, "Proporção do vídeo: Original. Segure para personalizar.", AlternarProporcao);
+        _icProporcao.LongClick += (_, e) => { e.Handled = true; EditarProporcao(); };
         _botoes.AddView(som);
+        _botoes.AddView(_icGirar);
+        _botoes.AddView(_icProporcao);
         _botoes.AddView(BotaoRedondo(Resource.Drawable.ic_info, "Números da conexão", () => { _mostrarNumeros = !_mostrarNumeros; _numeros.Visibility = _mostrarNumeros ? ViewStates.Visible : ViewStates.Gone; Controles(true); }));
         _botoes.Visibility = ViewStates.Gone;
         _raiz.AddView(_botoes, new FrameLayout.LayoutParams(Tema.Ajusta, Tema.Ajusta, GravityFlags.Bottom | GravityFlags.End));
@@ -198,7 +223,7 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
         _numeros.SetPadding(Tema.Dp(this, 10), Tema.Dp(this, 8), Tema.Dp(this, 10), Tema.Dp(this, 8));
         _numeros.Visibility = ViewStates.Gone;
         var lpN = new FrameLayout.LayoutParams(Tema.Ajusta, Tema.Ajusta, GravityFlags.Bottom | GravityFlags.Start);
-        lpN.SetMargins(Tema.Dp(this, 16), 0, Tema.Dp(this, 16), Tema.Dp(this, 16));
+        lpN.SetMargins(Tema.Dp(this, 16), 0, Tema.Dp(this, 16), Tema.Dp(this, 72));
         _raiz.AddView(_numeros, lpN);
 
         // o mesmo aviso por cima do vídeo, por alguns segundos quando a imagem abre
@@ -254,8 +279,8 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
             }
             else v.Animate()!.Alpha(0).SetDuration(200).WithEndAction(new Java.Lang.Runnable(() => { if (!_controlesVisiveis) v.Visibility = ViewStates.Gone; })).Start();
         }
-        if (mostrar) _ui.PostDelayed(_esconder, 3000);
-        else TelaCheia();
+        if (!mostrar) TelaCheia();
+        else if (_editorProporcao == null) _ui.PostDelayed(_esconder, 3000);
     }
 
     void AlternarSom()
@@ -264,6 +289,104 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
         if (_som != null) _som.Mudo = _mudo;
         _icSom.SetImageResource(_mudo ? Resource.Drawable.ic_sem_som : Resource.Drawable.ic_som);
         _icSom.ContentDescription = _mudo ? "Ligar o som" : "Sem som";
+    }
+
+    void GirarTela()
+    {
+        bool deitado = RequestedOrientation switch
+        {
+            ScreenOrientation.Landscape => true,
+            ScreenOrientation.Portrait => false,
+            _ => Resources!.Configuration!.Orientation == Android.Content.Res.Orientation.Landscape,
+        };
+        RequestedOrientation = deitado ? ScreenOrientation.Portrait : ScreenOrientation.Landscape;
+        AtualizarDescricaoRotacao();
+        AvisarControle(deitado ? "Vertical" : "Horizontal");
+    }
+
+    void AtualizarDescricaoRotacao()
+    {
+        _icGirar.ContentDescription = RequestedOrientation switch
+        {
+            ScreenOrientation.Portrait => "Girar para horizontal. Segure para seguir a rotação do sistema.",
+            ScreenOrientation.Landscape => "Girar para vertical. Segure para seguir a rotação do sistema.",
+            _ => "Girar tela. Seguindo a rotação do sistema.",
+        };
+    }
+
+    void AlternarProporcao()
+    {
+        var ultimo = _proporcaoPersonalizada.HasValue ? Enquadramento.Personalizado : Enquadramento.Vertical;
+        SelecionarProporcao(_enquadramento == ultimo ? Enquadramento.Original : _enquadramento + 1);
+    }
+
+    void AvisarControle(string texto)
+    {
+        _avisoControle?.Cancel();
+        _avisoControle = Toast.MakeText(this, texto, ToastLength.Short);
+        _avisoControle?.Show();
+    }
+
+    void EditarProporcao()
+    {
+        if (!_tocando || _editorProporcao != null) return;
+        var (larguraAtual, alturaAtual) = _proporcaoPersonalizada ?? (16, 9);
+        var campo = new EditText(this) { Text = $"{larguraAtual}:{alturaAtual}", Hint = "Largura:altura" };
+        campo.SetSingleLine(true);
+        campo.SetSelectAllOnFocus(true);
+        var moldura = new FrameLayout(this);
+        moldura.SetPadding(Tema.Dp(this, 22), 0, Tema.Dp(this, 22), 0);
+        moldura.AddView(campo);
+        var caixa = new Android.App.AlertDialog.Builder(this, Android.Resource.Style.ThemeDeviceDefaultDialogAlert)
+            .SetTitle("Proporção personalizada")!
+            .SetMessage("Digite largura:altura, por exemplo 19:9.")!
+            .SetView(moldura)!
+            .SetPositiveButton("Aplicar", (_, _) => { })!
+            .SetNegativeButton("Cancelar", (_, _) => { })!
+            .Create()!;
+        campo.RequestFocus();
+        caixa.Window?.SetSoftInputMode(SoftInput.StateAlwaysVisible);
+        _editorProporcao = caixa;
+        _ui.RemoveCallbacks(_esconder);
+        caixa.DismissEvent += (_, _) =>
+        {
+            _editorProporcao = null;
+            if (_tocando && !_fechando && !IsFinishing) Controles(true);
+        };
+        caixa.Show();
+        caixa.GetButton((int)Android.Content.DialogButtonType.Positive)!.Click += (_, _) =>
+        {
+            var partes = campo.Text?.Split(':');
+            if (partes is not { Length: 2 }
+                || !int.TryParse(partes[0], out int largura) || !int.TryParse(partes[1], out int altura)
+                || largura <= 0 || altura <= 0)
+            {
+                campo.Error = "Use dois números inteiros positivos, como 19:9.";
+                return;
+            }
+            _proporcaoPersonalizada = (largura, altura);
+            caixa.Dismiss();
+            SelecionarProporcao(Enquadramento.Personalizado);
+        };
+    }
+
+    void SelecionarProporcao(Enquadramento modo)
+    {
+        string descricao = modo switch
+        {
+            Enquadramento.Ampliar => "Ampliar",
+            Enquadramento.Preencher => "Preencher tela",
+            Enquadramento.Widescreen => "16:9",
+            Enquadramento.Classico => "4:3",
+            Enquadramento.Ultrawide => "21:9",
+            Enquadramento.Vertical => "9:16",
+            Enquadramento.Personalizado when _proporcaoPersonalizada is { } p => $"{p.Largura}:{p.Altura}",
+            _ => "Original",
+        };
+        _enquadramento = modo;
+        _icProporcao.ContentDescription = $"Proporção do vídeo: {descricao}. Segure para personalizar.";
+        AjustarProporcao();
+        AvisarControle(descricao);
     }
 
     void TelaCheia()
@@ -291,6 +414,7 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
         {
             if (_fechando) return;
             _tocando = false;
+            _editorProporcao?.Dismiss();
             Controles(false);
             _espera.Visibility = ViewStates.Visible;
             _espera.Alpha = 1;
@@ -603,7 +727,12 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
         var d = new Decodificador(_surface!);
         d.Tamanho += (w, h) =>
         {
-            _videoW = w; _videoH = h; Ui(AjustarProporcao);
+            Ui(() =>
+            {
+                if (_fechando) return;
+                (_videoW, _videoH) = (w, h);
+                AjustarProporcao();
+            });
             _tentativaMidia++;
             Telemetria.Evento("midia_tentativa", new JsonObject
             {
@@ -626,14 +755,27 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
         lock (_midia) return _fechando ? null : _som ??= new Som(_demux.CanaisAudio) { Mudo = _mudo };
     }
 
-    /// <summary>Encaixa o vídeo na tela sem esticar (faixas pretas onde sobrar).</summary>
     void AjustarProporcao()
     {
-        if (_videoW <= 0 || _videoH <= 0) return;
         int tw = _raiz.Width, th = _raiz.Height;
-        if (tw <= 0 || th <= 0) return;
-        double s = Math.Min((double)tw / _videoW, (double)th / _videoH);
-        _video.LayoutParameters = new FrameLayout.LayoutParams((int)(_videoW * s), (int)(_videoH * s), GravityFlags.Center);
+        if (tw <= 0 || th <= 0 || _videoW <= 0 || _videoH <= 0) return;
+        double proporcao = _enquadramento switch
+        {
+            Enquadramento.Widescreen => 16d / 9,
+            Enquadramento.Classico => 4d / 3,
+            Enquadramento.Ultrawide => 21d / 9,
+            Enquadramento.Vertical => 9d / 16,
+            Enquadramento.Personalizado when _proporcaoPersonalizada is { } personalizada => (double)personalizada.Largura / personalizada.Altura,
+            Enquadramento.Preencher => (double)tw / th,
+            _ => (double)_videoW / _videoH,
+        };
+        // No modo Ampliar, a Surface mantém a proporção e as bordas passam dos limites da janela.
+        bool cabePelaAltura = proporcao <= (double)tw / th;
+        bool usarAltura = _enquadramento == Enquadramento.Ampliar ? !cabePelaAltura : cabePelaAltura;
+        int w = usarAltura ? Math.Max(1, (int)Math.Round(th * proporcao)) : tw;
+        int h = usarAltura ? th : Math.Max(1, (int)Math.Round(tw / proporcao));
+        if (_video.LayoutParameters is not FrameLayout.LayoutParams p || p.Width != w || p.Height != h)
+            _video.LayoutParameters = new FrameLayout.LayoutParams(w, h, GravityFlags.Center);
     }
 
     /// <summary>
@@ -700,13 +842,7 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
     public override void OnWindowFocusChanged(bool hasFocus)
     {
         base.OnWindowFocusChanged(hasFocus);
-        if (hasFocus) { TelaCheia(); AjustarProporcao(); }
-    }
-
-    public override void OnConfigurationChanged(Android.Content.Res.Configuration newConfig)
-    {
-        base.OnConfigurationChanged(newConfig);
-        _raiz.Post(AjustarProporcao);
+        if (hasFocus) TelaCheia();
     }
 
     /// <summary>Saiu do app (tela inicial, outro app): para de assistir. Uma live tocando escondida gasta bateria e dados.</summary>
@@ -720,6 +856,8 @@ public class PlayerActivity : Android.App.Activity, ISurfaceHolderCallback
     {
         if (!_playerIniciado) { base.OnDestroy(); return; }
         _fechando = true;
+        _editorProporcao?.Dismiss();
+        _avisoControle?.Cancel();
         _ui.RemoveCallbacks(_esconder);
         Sessao.Mensagem -= AoReceber;
         Sessao.NaoEntregue -= AoNaoEntregar;

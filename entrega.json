@@ -1,7 +1,7 @@
 {
-  "versao": "0.1.7",
-  "versionCode": 8,
-  "notas": "- Android: transmitir a tela do celular para o grupo\n- Transmitir: só 60 fps (a 30 o decodificador Exynos segura ~90 ms)\n- Captura: passo OpenGL num relógio fixo (fps constante e IDR sempre, mesmo com a tela parada)\n- Transmitir: qualidade pelo lado menor; o player não derruba o SRT num timeout de leitura\n- Transmitir: tamanho da tela pelo DisplayManager (o cast do WindowManager quebrava no serviço)\n- Android transmite: captura de tela (H.264) e do som (Opus), com teste no Debug\n- Android transmite: anfitrião, serviço em primeiro plano e botão na aba Ao vivo\n- TsMux: multiplexador mpegts do celular e teste contra TsDemux e ffmpeg\n- Android transmite: contratos da captura e do mux TS (stubs)",
+  "versao": "0.1.8",
+  "versionCode": 9,
+  "notas": "- Android: adicionar controles de rotação e proporção ao player",
   "obrigatoria": false,
-  "privado": "e3c9d3a079d2915328eb9027c92557c76b84c5a0"
+  "privado": "2c002546b845ea2950d5c71a3f4608ca1fd85d34"
 }
