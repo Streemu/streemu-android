@@ -1,7 +1,7 @@
 {
-  "versao": "0.1.10",
-  "versionCode": 11,
-  "notas": "- Player: escada de recuo roda de verdade quando o driver recusa",
+  "versao": "0.1.11",
+  "versionCode": 12,
+  "notas": "- Telemetria: registrar crash do app no log e no evento \"crash\"",
   "obrigatoria": false,
-  "privado": "6aef1e55008e70c662a0ed931610f283f221efb1"
+  "privado": "a209ad9a358f1ebca6546b7f822de301aa1b58da"
 }

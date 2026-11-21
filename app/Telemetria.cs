@@ -83,6 +83,7 @@ static class Telemetria
         _app = c.ApplicationContext!;
         _raiz = System.IO.Path.Combine(c.FilesDir!.AbsolutePath, "telemetria");
         LogApp.Line += l => _atual?.Linha(l);
+        OuvirCrashes();
         if (Ligado) Ligar();
         else _ = Task.Run(ApagarPendentes);   // desligado numa abertura anterior: não pode sobrar nada
     }
@@ -138,6 +139,56 @@ static class Telemetria
     }
 
     public static void Evento(string tipo, JsonObject? campos = null) { _atual?.Evento(tipo, campos); if (tipo is "live" or "live_fim" or "midia_falha") _acordar.Set(); }
+
+    // ================================================================================================ crash
+
+    // Sem isto, um crash do app sumia sem uma linha: a sessão só aparecia como "não fechou normalmente", igual a o Android matar o processo por
+    // memória ou a pessoa fechar à força (JC, 21/11 17:55, gravador de tela do sistema durante a transmissão). Agora o crash fica no log e vira o
+    // evento "crash", gravados no disco na hora (a fila da thread de disco morreria junto com o processo); sobem na abertura seguinte.
+    static int _crashRegistrado;
+
+    static void OuvirCrashes()
+    {
+        // exceção .NET que atravessa para o Java (thread principal, callbacks do Android): chega aqui antes do Android derrubar o app.
+        // Handled fica false: o app cai como antes, só que com registro.
+        Android.Runtime.AndroidEnvironment.UnhandledExceptionRaiser += (_, e) => RegistrarCrash("android", e.Exception);
+        // exceção solta numa thread .NET (as nossas threads de rede, SRT, decodificador)
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => RegistrarCrash("dotnet", e.ExceptionObject as Exception);
+        // exceção do próprio Java (framework, bibliotecas): registra e devolve para quem tratava antes (o que mostra "o app parou")
+        Java.Lang.Thread.DefaultUncaughtExceptionHandler = new CrashJava(Java.Lang.Thread.DefaultUncaughtExceptionHandler);
+        // Task com exceção que ninguém leu: não derruba o app, mas costuma ser erro escondido
+        TaskScheduler.UnobservedTaskException += (_, e) => LogApp.Info("AVISO: exceção de Task não observada: " + e.Exception.GetBaseException());
+    }
+
+    sealed class CrashJava(Java.Lang.Thread.IUncaughtExceptionHandler? anterior) : Java.Lang.Object, Java.Lang.Thread.IUncaughtExceptionHandler
+    {
+        public void UncaughtException(Java.Lang.Thread t, Java.Lang.Throwable e)
+        {
+            try { RegistrarCrash("java", null, e.Class?.Name ?? "?", e.Message ?? "", Android.Util.Log.GetStackTraceString(e) ?? "", t.Name ?? "?"); } catch { }
+            anterior?.UncaughtException(t, e);
+        }
+    }
+
+    static void RegistrarCrash(string origem, Exception? e) =>
+        RegistrarCrash(origem, e, e?.GetType().FullName ?? "?", e?.Message ?? "", e?.ToString() ?? "", Thread.CurrentThread.Name ?? $"#{Environment.CurrentManagedThreadId}");
+
+    /// <summary>Uma vez por processo (o mesmo crash passa por mais de um gancho: o primeiro, com a exceção .NET original, é o que vale).</summary>
+    static void RegistrarCrash(string origem, Exception? _, string tipo, string mensagem, string pilha, string thread)
+    {
+        if (Interlocked.Exchange(ref _crashRegistrado, 1) != 0) return;
+        try
+        {
+            LogApp.Info($"CRASH ({origem}, thread {thread}): {tipo}: {mensagem}\n{pilha}");
+            static string Corta(string s, int max) { s = Limpar(s); return s.Length > max ? s[..max] + "…" : s; }
+            _atual?.Evento("crash", new JsonObject
+            {
+                ["origem"] = origem, ["tipo_excecao"] = tipo, ["mensagem"] = Corta(mensagem, 500), ["pilha"] = Corta(pilha, 6000), ["thread"] = thread,
+                ["transmitindo"] = Transmissao.ServicoTransmissao.AoVivo,
+            });
+            Descarregar(new Dictionary<string, StringBuilder>());   // agora, nesta thread: depois disto o processo pode morrer a qualquer instante
+        }
+        catch { }
+    }
 
     /// <summary>Uma linha num CSV da sessão (com o cabeçalho na primeira vez).</summary>
     public static void Serie(string arquivo, string cabecalho, string linha) => _atual?.Csv(arquivo, cabecalho, linha);
