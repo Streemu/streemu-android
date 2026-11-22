@@ -1,7 +1,7 @@
 {
-  "versao": "0.1.15",
-  "versionCode": 16,
-  "notas": "- Latência do SRT pela ida e volta, telemetria do SRT e aviso de qualidade\n- Cinema no celular: assistir, abrir filmes e trocar o áudio\n- Assistir várias lives ao mesmo tempo no celular, com destaque e botão de layout",
+  "versao": "0.1.16",
+  "versionCode": 17,
+  "notas": "- Cinema no celular e várias lives ao mesmo tempo",
   "obrigatoria": false,
-  "privado": "ad47c4fc2659a734081e926ce18aa82f5b9f09f3"
+  "privado": "2b02deb2b3e4fd68c209ed9671b5af08e98ecdfb"
 }

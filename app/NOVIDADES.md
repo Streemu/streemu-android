@@ -1,7 +1,7 @@
 <!--
 Este arquivo é o que a tela "Novidades" do app Android mostra (embutido no app) (spec 002 do streemu-android-dev). Ele é escrito para quem USA o Streemu:
 frases curtas, sem causa técnica e sem nome de pessoa (o arquivo vai para o repositório público).
-PR comum só acrescenta itens em "## 0.1.15 — 2026-11-22
+PR comum só acrescenta itens em "## 0.1.16 — 2026-11-22
 Assistir várias lives ao mesmo tempo e o Cinema no celular.
 
 ### Novo

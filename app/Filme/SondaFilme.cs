@@ -1,3 +1,4 @@
+#pragma warning disable CS0618   // MediaExtractorCompat vem marcado como obsoleto no binding ("obsoleted in this android platform"), mas é o extrator que enxerga o E-AC-3 de um MKV (o MediaExtractor do Android não lista); o aviso é esperado
 using Android.Content;
 using Android.Media;
 using AndroidX.Media3.ExoPlayer;
