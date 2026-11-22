@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- Fundo do ícone do Streemu DEV (build de teste): laranja, para não confundir com o app do público -->
+  <color name="streemu_dev_fundo">#F57C00</color>
+</resources>

@@ -10,6 +10,18 @@ namespace Streemu.Proto.Transmissao;
 /// Thread-safe: vídeo e áudio chegam de threads diferentes. O evento <see cref="Saida"/> sai de dentro do lock (a ordem dos blocos é a ordem
 /// dos contadores de continuidade), então o assinante tem que ser rápido e não pode chamar o mux de volta.
 /// </summary>
+/// <summary>Codec do vídeo no mpegts: H.264 (stream_type 0x1B) ou HEVC (0x24).</summary>
+enum CodecVideoTs { H264, Hevc }
+
+/// <summary>Codec do áudio no mpegts: Opus da live (0x06 com descritores), AAC com ADTS (0x0F), AC-3 (0x81), E-AC-3 (0x87) ou MP3 (0x03).</summary>
+enum CodecAudioTs { Nenhum, Opus, Aac, Ac3, Eac3, Mp3 }
+
+/// <summary>
+/// Como o mux monta o fluxo. <see cref="Absoluto"/> = carimbos no tempo do filme (µs → 90 kHz sem base nem folga): o <c>-output_ts_offset</c> do ffmpeg, para o PTS ser a posição do filme
+/// (o mpv e o PlayerStream de quem assiste contam com isso). <see cref="AscAac"/> = AudioSpecificConfig (o csd-0 do MediaExtractor), de onde sai o cabeçalho ADTS de cada quadro.
+/// </summary>
+sealed record OpcoesTs(CodecVideoTs Video = CodecVideoTs.H264, CodecAudioTs Audio = CodecAudioTs.Opus, int Canais = 2, byte[]? AscAac = null, bool Absoluto = false);
+
 sealed class TsMux
 {
     const int Tam = 188;
@@ -21,8 +33,12 @@ sealed class TsMux
     const long RepetePsiUs = 100_000;
     const long Mascara33 = (1L << 33) - 1;
 
-    readonly bool _comAudio;
+    readonly bool _comAudio, _absoluto;
     readonly int _canais;
+    readonly CodecVideoTs _video;
+    readonly CodecAudioTs _audio;
+    readonly (int Objeto, int Freq, int Canais)? _adts;
+    long _ultimoPcr = -1;
     readonly object _lock = new();
     readonly int[] _cc = new int[2];      // contadores de continuidade: vídeo e áudio
     readonly int[] _ccPsi = new int[2];   // PAT e PMT
@@ -35,10 +51,17 @@ sealed class TsMux
 
     /// <param name="comAudio">Anuncia a faixa Opus na PMT.</param>
     /// <param name="canaisAudio">1 ou 2.</param>
-    public TsMux(bool comAudio, int canaisAudio = 2)
+    public TsMux(bool comAudio, int canaisAudio = 2) : this(new OpcoesTs(CodecVideoTs.H264, comAudio ? CodecAudioTs.Opus : CodecAudioTs.Nenhum, canaisAudio)) { }
+
+    /// <summary>O mux do filme em cópia direta (H.264 ou HEVC, áudio como veio do arquivo) ou o da live (o construtor acima).</summary>
+    public TsMux(OpcoesTs o)
     {
-        _comAudio = comAudio;
-        _canais = canaisAudio == 1 ? 1 : 2;
+        _video = o.Video; _audio = o.Audio;
+        _comAudio = o.Audio != CodecAudioTs.Nenhum;
+        _canais = o.Canais == 1 ? 1 : 2;
+        _absoluto = o.Absoluto;
+        if (o.Audio == CodecAudioTs.Aac)
+            _adts = FilmeTs.LerAsc(o.AscAac ?? throw new ArgumentException("AAC sem o AudioSpecificConfig (csd-0)"));
     }
 
     /// <summary>
@@ -48,55 +71,91 @@ sealed class TsMux
     public event Action<byte[], bool>? Saida;
 
     /// <summary>Um quadro em Annex-B (com 00 00 00 01). <paramref name="ptsUs"/> no relógio comum (µs, monotônico). Quadro-chave já vem com SPS/PPS.</summary>
-    public void Video(ReadOnlySpan<byte> annexB, long ptsUs, bool chave)
+    public void Video(ReadOnlySpan<byte> annexB, long ptsUs, bool chave) => Video(annexB, ptsUs, ptsUs, chave, false);
+
+    /// <summary>
+    /// Um quadro em Annex-B com PTS e DTS (µs). Com <paramref name="comDts"/> o PES leva os dois carimbos (vídeo com quadros B: o DTS vem da ordem de decodificação,
+    /// <see cref="FilmeTs.OrdemDts"/>); sem ele, só o PTS, como o ffmpeg faz quando são iguais.
+    /// </summary>
+    public void Video(ReadOnlySpan<byte> annexB, long ptsUs, long dtsUs, bool chave, bool comDts = true)
     {
         if (annexB.IsEmpty) return;
         lock (_lock)
         {
-            long pts = Pts90k(ptsUs);
-            bool temAud = TemAud(annexB);
-            int carga = (temAud ? 0 : 6) + annexB.Length;
-            int pesLen = 3 + 5 + carga;
+            long pts = Pts90k(ptsUs), dts = comDts ? Pts90k(dtsUs) : pts;
+            bool temAud = TemAud(annexB, _video);
+            int audLen = _video == CodecVideoTs.Hevc ? 7 : 6;
+            int carga = (temAud ? 0 : audLen) + annexB.Length;
+            int h = comDts ? 10 : 5;            // bytes do PTS (e DTS) no cabeçalho do PES
+            int pesLen = 3 + h + carga;
 
-            // PES: 00 00 01 E0 | tamanho | 80 80 05 | PTS | [AUD] quadro
-            int total = 14 + carga;
+            // PES: 00 00 01 E0 | tamanho | 80 80|C0 05|0A | PTS [DTS] | [AUD] quadro
+            int total = 9 + h + carga;
             Garantir(total);
             var p = _pes;
             p[0] = 0; p[1] = 0; p[2] = 1; p[3] = 0xE0;
             int declarado = pesLen <= 0xFFFF ? pesLen : 0;
             p[4] = (byte)(declarado >> 8); p[5] = (byte)declarado;
-            p[6] = 0x80; p[7] = 0x80; p[8] = 5;
-            EscreveTs(p.AsSpan(9), 2, pts);
-            int o = 14;
-            if (!temAud) { p[o++] = 0; p[o++] = 0; p[o++] = 0; p[o++] = 1; p[o++] = 0x09; p[o++] = 0xF0; }
+            p[6] = 0x80; p[7] = (byte)(comDts ? 0xC0 : 0x80); p[8] = (byte)h;
+            EscreveTs(p.AsSpan(9), comDts ? 3 : 2, pts);
+            if (comDts) EscreveTs(p.AsSpan(14), 1, dts);
+            int o = 9 + h;
+            if (!temAud)
+            {
+                p[o++] = 0; p[o++] = 0; p[o++] = 0; p[o++] = 1;
+                if (_video == CodecVideoTs.Hevc) { p[o++] = 0x46; p[o++] = 0x01; p[o++] = 0x50; }   // AUD do HEVC (tipo 35, qualquer tipo de quadro)
+                else { p[o++] = 0x09; p[o++] = 0xF0; }
+            }
             annexB.CopyTo(p.AsSpan(o));
 
             bool psi = chave || _primeiro || ptsUs - _ultimoPsiUs >= RepetePsiUs;
-            Emitir(PidVideo, total, psi, chave, (pts - AdiantoPcr) & Mascara33, ptsUs);
+            long pcr = (dts - AdiantoPcr) & Mascara33;
+            if (_absoluto)
+            {
+                // o relógio do PCR nunca anda para trás nem fica negativo (o filme começa perto de 0: o PCR de 2 ms antes do DTS viraria 2^33)
+                pcr = Math.Max(Math.Max(0, dts - AdiantoPcr), _ultimoPcr);
+                _ultimoPcr = pcr;
+            }
+            Emitir(PidVideo, total, psi, chave, pcr, ptsUs);
         }
     }
 
-    /// <summary>Um pacote Opus cru (sem cabeçalho), 10 ou 20 ms, no mesmo relógio do vídeo.</summary>
-    public void Audio(ReadOnlySpan<byte> opus, long ptsUs)
+    /// <summary>
+    /// Um pacote de áudio cru, no mesmo relógio do vídeo: Opus (10 ou 20 ms) ganha o cabeçalho de controle do TS; AAC ganha o ADTS; AC-3, E-AC-3 e MP3 vão como vieram (quadros inteiros).
+    /// </summary>
+    public void Audio(ReadOnlySpan<byte> dados, long ptsUs)
     {
-        if (!_comAudio || opus.IsEmpty) return;
+        if (!_comAudio || dados.IsEmpty) return;
+        // Tempo absoluto: o MediaExtractor entrega o "priming" do AAC com PTS negativo (a primeira amostra do .mp4 fica antes de 0 pela edit list). No TS o PTS é de 33 bits sem sinal:
+        // -21 ms viraria 2^33 - 21 ms e o ffmpeg do outro lado vê um salto de 26 h. Esse quadro é o que o decodificador descarta mesmo, então não vai.
+        if (_absoluto && ptsUs < 0) return;
         lock (_lock)
         {
             long pts = Pts90k(ptsUs);
-            // cabeçalho de controle do Opus em TS: 0x7F 0xE0 e o tamanho em bytes 0xFF... + resto (como o ffmpeg)
-            int carga = 2 + (opus.Length / 255 + 1) + opus.Length;
+            int cab = _audio switch { CodecAudioTs.Opus => 2 + (dados.Length / 255 + 1), CodecAudioTs.Aac => 7, _ => 0 };
+            int carga = cab + dados.Length;
             int pesLen = 3 + 5 + carga;
             int total = 14 + carga;
             Garantir(total);
             var p = _pes;
-            p[0] = 0; p[1] = 0; p[2] = 1; p[3] = 0xBD;
-            p[4] = (byte)(pesLen >> 8); p[5] = (byte)pesLen;   // um pacote Opus nunca passa de 64 KB
+            p[0] = 0; p[1] = 0; p[2] = 1;
+            p[3] = (byte)(_audio is CodecAudioTs.Aac or CodecAudioTs.Mp3 ? 0xC0 : 0xBD);
+            p[4] = (byte)(pesLen >> 8); p[5] = (byte)pesLen;   // um pacote de áudio nunca passa de 64 KB
             p[6] = 0x80; p[7] = 0x80; p[8] = 5;
             EscreveTs(p.AsSpan(9), 2, pts);
             int o = 14;
-            p[o++] = 0x7F; p[o++] = 0xE0;
-            for (int r = opus.Length; ; r -= 255) { p[o++] = (byte)Math.Min(r, 255); if (r < 255) break; }
-            opus.CopyTo(p.AsSpan(o));
+            if (_audio == CodecAudioTs.Opus)
+            {
+                // cabeçalho de controle do Opus em TS: 0x7F 0xE0 e o tamanho em bytes 0xFF... + resto (como o ffmpeg)
+                p[o++] = 0x7F; p[o++] = 0xE0;
+                for (int r = dados.Length; ; r -= 255) { p[o++] = (byte)Math.Min(r, 255); if (r < 255) break; }
+            }
+            else if (_audio == CodecAudioTs.Aac)
+            {
+                FilmeTs.EscreveAdts(p.AsSpan(o), _adts!.Value, dados.Length);
+                o += 7;
+            }
+            dados.CopyTo(p.AsSpan(o));
 
             bool psi = _primeiro || ptsUs - _ultimoPsiUs >= RepetePsiUs;
             Emitir(PidAudio, total, psi, false, 0, ptsUs);
@@ -107,6 +166,7 @@ sealed class TsMux
 
     long Pts90k(long ptsUs)
     {
+        if (_absoluto) return (ptsUs * 9 / 100) & Mascara33;
         if (!_temBase) { _temBase = true; _baseUs = ptsUs; }
         return (((ptsUs - _baseUs) * 9 / 100) + FolgaInicial) & Mascara33;
     }
@@ -178,12 +238,18 @@ sealed class TsMux
         s[n++] = 0xC1; s[n++] = 0; s[n++] = 0;
         s[n++] = (byte)(0xE0 | (PidVideo >> 8)); s[n++] = (byte)(PidVideo & 0xFF);   // PID do PCR
         s[n++] = 0xF0; s[n++] = 0;                    // sem descritores do programa
-        s[n++] = 0x1B; s[n++] = (byte)(0xE0 | (PidVideo >> 8)); s[n++] = (byte)(PidVideo & 0xFF); s[n++] = 0xF0; s[n++] = 0;
+        s[n++] = (byte)(_video == CodecVideoTs.Hevc ? 0x24 : 0x1B); s[n++] = (byte)(0xE0 | (PidVideo >> 8)); s[n++] = (byte)(PidVideo & 0xFF); s[n++] = 0xF0; s[n++] = 0;
         if (_comAudio)
         {
-            s[n++] = 0x06; s[n++] = (byte)(0xE0 | (PidAudio >> 8)); s[n++] = (byte)(PidAudio & 0xFF); s[n++] = 0xF0; s[n++] = 10;
-            s[n++] = 0x05; s[n++] = 4; s[n++] = (byte)'O'; s[n++] = (byte)'p'; s[n++] = (byte)'u'; s[n++] = (byte)'s';
-            s[n++] = 0x7F; s[n++] = 2; s[n++] = 0x80; s[n++] = (byte)_canais;
+            byte tipo = _audio switch { CodecAudioTs.Aac => 0x0F, CodecAudioTs.Ac3 => 0x81, CodecAudioTs.Eac3 => 0x87, CodecAudioTs.Mp3 => 0x03, _ => 0x06 };
+            s[n++] = tipo; s[n++] = (byte)(0xE0 | (PidAudio >> 8)); s[n++] = (byte)(PidAudio & 0xFF); s[n++] = 0xF0;
+            if (_audio == CodecAudioTs.Opus)
+            {
+                s[n++] = 10;
+                s[n++] = 0x05; s[n++] = 4; s[n++] = (byte)'O'; s[n++] = (byte)'p'; s[n++] = (byte)'u'; s[n++] = (byte)'s';
+                s[n++] = 0x7F; s[n++] = 2; s[n++] = 0x80; s[n++] = (byte)_canais;
+            }
+            else s[n++] = 0;
         }
         int len = n + 4 - 3;
         s[1] = (byte)(0xB0 | (len >> 8)); s[2] = (byte)len;
@@ -228,11 +294,12 @@ sealed class TsMux
         d[4] = (byte)((v << 1) | 1);
     }
 
-    /// <summary>O quadro já começa com AUD (tipo 9)? Olha só o primeiro NAL.</summary>
-    static bool TemAud(ReadOnlySpan<byte> d)
+    /// <summary>O quadro já começa com AUD (tipo 9 no H.264, 35 no HEVC)? Olha só o primeiro NAL.</summary>
+    static bool TemAud(ReadOnlySpan<byte> d, CodecVideoTs codec)
     {
         int i = 0;
         while (i < d.Length && d[i] == 0) i++;
-        return i >= 2 && i + 1 < d.Length && d[i] == 1 && (d[i + 1] & 0x1F) == 9;
+        if (i < 2 || i + 1 >= d.Length || d[i] != 1) return false;
+        return codec == CodecVideoTs.Hevc ? ((d[i + 1] >> 1) & 0x3F) == 35 : (d[i + 1] & 0x1F) == 9;
     }
 }

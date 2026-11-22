@@ -18,6 +18,11 @@
     <AndroidCreatePackagePerAbi>false</AndroidCreatePackagePerAbi>
     <TrimMode>full</TrimMode>
   </PropertyGroup>
+  <!-- Build de dev (instala ao lado do retail): o nome na tela inicial vira "Streemu DEV" para não confundir os dois. -->
+  <PropertyGroup Condition="'$(ApplicationId)' == 'br.com.streemu.proto.spike'">
+    <ApplicationTitle>Streemu DEV</ApplicationTitle>
+    <DefineConstants>$(DefineConstants);STREEMU_DEV</DefineConstants>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <AndroidKeyStore>true</AndroidKeyStore>
     <AndroidSigningKeyStore>$(STREEMU_ANDROID_KEYSTORE)</AndroidSigningKeyStore>
@@ -40,6 +45,8 @@
     <ProjectReference Include="../rede/Streemu.Rede.csproj" />
     <!-- a tela Novidades: embutido no código, como no app Windows. Na pasta Assets o aapt2 falha quando o caminho do clone tem acento ("Área de Trabalho") -->
     <EmbeddedResource Include="NOVIDADES.md" LogicalName="NOVIDADES.md" />
+    <ProjectReference Include="../cinema/Streemu.Cinema.csproj" />
+    <PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer" Version="1.9.2.1" />
     <!-- lib/arm64-v8a/libsrt.so (nativo/compilar-srt.ps1) entra sozinho: o .NET for Android empacota lib/<abi>/*.so por convenção -->
   </ItemGroup>
 </Project>

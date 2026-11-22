@@ -17,7 +17,7 @@ namespace Streemu.Proto;
 /// tela larga (600 dp ou mais: celular deitado, dobrável aberto, tablet), onde a lista de lives também ganha colunas.
 /// No build Debug, abrir com "--es codigo X" (testar-no-celular.ps1) vai direto para o player no modo de código, sem sala.
 /// </summary>
-[Activity(Label = "Streemu", MainLauncher = true, Exported = true, Theme = "@android:style/Theme.DeviceDefault.NoActionBar",
+[Activity(Label = NomeApp.Nome, MainLauncher = true, Exported = true, Theme = "@android:style/Theme.DeviceDefault.NoActionBar",
           WindowSoftInputMode = SoftInput.AdjustResize, LaunchMode = LaunchMode.SingleTask)]
 // convite de grupo: streemu://grupo/<código> e https://www.streemu.com.br/g/<código> (esse com verificação de link, para abrir direto no app)
 [IntentFilter(new[] { Intent.ActionView }, Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable }, DataScheme = "streemu", DataHost = "grupo")]
@@ -45,9 +45,9 @@ public partial class MainActivity : Android.App.Activity
         base.OnCreate(savedInstanceState);
         Atualizacao.Iniciar(this);
 #if DEBUG
-        if (!Atualizacao.BloqueiaSala && Intent?.GetStringExtra("codigo") is { Length: > 0 } codigo)
+        if (!Atualizacao.BloqueiaSala && (Intent?.GetStringExtra("codigos") ?? Intent?.GetStringExtra("codigo")) is { Length: > 0 } codigo)
         {
-            StartActivity(new Intent(this, typeof(PlayerActivity)).PutExtra("codigo", codigo));
+            StartActivity(new Intent(this, typeof(PlayerActivity)).PutExtra("codigos", codigo).PutExtra("limite_lives", Intent!.GetIntExtra("limite_lives", 0)).PutExtra("latencia_srt", Intent!.GetIntExtra("latencia_srt", 0)));
             Finish();
             return;
         }

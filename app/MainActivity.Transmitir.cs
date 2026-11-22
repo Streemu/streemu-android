@@ -55,6 +55,8 @@ public partial class MainActivity
     protected override void OnActivityResult(int requestCode, Result resultCode, Intent? data)
     {
         base.OnActivityResult(requestCode, resultCode, data);
+        if (requestCode == CodigoArquivoFilme) { AoEscolherArquivoFilme(resultCode, data); return; }
+        if (requestCode == CodigoCriarSessao) { AoEscolherArquivoAnfitriao(resultCode, data); return; }
         if (requestCode != CodigoProjecao) return;
         if (resultCode != Result.Ok || data == null) { Toast.MakeText(this, "A captura da tela não foi permitida.", ToastLength.Short)?.Show(); return; }
         bool audio = SomDaTransmissao.Ligado(this) && AudioPermitido();

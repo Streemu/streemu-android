@@ -35,6 +35,7 @@ static class Srt
     [DllImport(Lib)] static extern int srt_accept(int u, byte[] endereco, ref int tamanho);
     [DllImport(Lib)] static extern int srt_sendmsg(int u, ref byte buf, int tamanho, int ttl, int naOrdem);
     [DllImport(Lib)] public static extern int srt_getsockstate(int u);
+    [DllImport(Lib)] static extern int srt_bstats(int u, byte[] perf, int limpar);
 
     public static string UltimoErro => Marshal.PtrToStringUTF8(srt_getlasterror_str()) ?? "?";
 
@@ -127,6 +128,30 @@ static class Srt
         int codigo = srt_getlasterror(ref e);
         if (codigo == EAsyncSnd || codigo == ETimeout) return false;
         throw new InvalidOperationException("SRT send: " + UltimoErro);
+    }
+
+    // ---- estatísticas (struct CBytePerfMon = SRT_TRACEBSTATS do srt.h da v1.5.7, em srtcore/srt.h) ----
+    // A struct tem 496 bytes e não é espelhada em C#: srt_bstats escreve num buffer de 1024 bytes e só lemos os campos abaixo, pelos offsets.
+    // Os offsets foram conferidos compilando o trecho da struct com gcc (offsetof; sizeof = 496). Em armeabi-v7a (AAPCS) e arm64 o int64_t e o double
+    // alinham em 8 bytes, então os offsets são os mesmos nas duas ABIs. Se a libsrt for atualizada, reconferir (os campos novos entram no fim da struct).
+    const int OffPktRecv = 144, OffPktRcvLoss = 156, OffPktRcvRetrans = 164, OffPktRcvBelated = 224, OffPktRcvDrop = 236,
+              OffMsRtt = 328, OffPktRcvBuf = 380, OffMsRcvBuf = 388, OffMsRcvTsbPdDelay = 392;
+
+    /// <summary>Números do SRT no intervalo desde a leitura anterior (os "local" do srt_bstats com clear) e os instantâneos.</summary>
+    public readonly record struct Estatisticas(long Recebidos, int Perdidos, int Retransmitidos, int Descartados, long Belated,
+        double RttMs, int LatenciaMs, int BufferMs, int BufferPacotes);
+
+    /// <summary>Lê (e zera) as estatísticas do intervalo. Falso se o socket não existe mais.</summary>
+    public static bool LerEstatisticas(int u, out Estatisticas e)
+    {
+        e = default;
+        var b = new byte[1024];
+        if (u == Erro || srt_bstats(u, b, 1) == Erro) return false;
+        e = new Estatisticas(
+            BitConverter.ToInt64(b, OffPktRecv), BitConverter.ToInt32(b, OffPktRcvLoss), BitConverter.ToInt32(b, OffPktRcvRetrans),
+            BitConverter.ToInt32(b, OffPktRcvDrop), BitConverter.ToInt64(b, OffPktRcvBelated), BitConverter.ToDouble(b, OffMsRtt),
+            BitConverter.ToInt32(b, OffMsRcvTsbPdDelay), BitConverter.ToInt32(b, OffMsRcvBuf), BitConverter.ToInt32(b, OffPktRcvBuf));
+        return true;
     }
 
     /// <summary>struct sockaddr_in do Linux para 127.0.0.1:porta: família (2, ordem do processador), porta (ordem de rede), endereço, 8 zeros.</summary>

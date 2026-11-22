@@ -115,6 +115,7 @@ static class Sessao
         // o Dispose da sala espera o WebSocket fechar (até ~0,8 s): fora da thread da tela, que chama isto ao trocar de grupo e ao sair da conta
         if (s != null) _ = Task.Run(() => { try { s.Dispose(); } catch (Exception e) { Streemu.Util.Log.Info("[sala] fechar: " + e.Message); } });
         lock (_gate) { _miniaturas.Clear(); _avataresPedidos.Clear(); }
+        Filme.CinemaSala.Zerar();
     }
 
     public static async Task SairDaContaAsync()
@@ -203,6 +204,9 @@ static class Sessao
             case "avatar": _ = AvatarAsync(de, msg); return;
             // a v1 de transmitir não manda miniatura nem avatar (o cartão do amigo fica sem imagem): o PC que pede não recebe resposta
             case "avatar_pedir": case "miniatura_pedir": return;
+            // Cinema: o anúncio das sessões do grupo (filme_aberto/filme_fechado). O resto do filme_* vai pelo túnel; filme_aceito/recusado seguem para a FilmeActivity
+            case "filme_aberto": Filme.CinemaSala.Receber(de, apelido, msg); return;
+            case "filme_fechado": Filme.CinemaSala.Receber(de, apelido, msg); break;   // a FilmeActivity também precisa saber (o anfitrião fechou)
             // o lado de quem transmite (Anfitriao): quem quer assistir a esta live
             case "quero_assistir":
                 if (Anfitriao.Ativo is { } ao) ao.AoReceber(de, apelido, msg);

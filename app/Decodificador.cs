@@ -12,7 +12,7 @@ namespace Streemu.Proto;
 /// </summary>
 sealed class Decodificador : IDisposable
 {
-    readonly Surface _surface;
+    volatile Surface _surface;
     /// <summary>
     /// Um MediaCodec com a fila e as threads dele. Cada troca de SPS cria uma vida nova: as threads da anterior só enxergam a fila dela, então
     /// não roubam o primeiro quadro-chave do decodificador novo nem continuam rodando depois de o codec ser liberado.
@@ -52,6 +52,27 @@ sealed class Decodificador : IDisposable
     {
         _surface = surface;
         Streemu.Util.Log.Info($"Relógio: Tunnel.NowUs - nanoTime/1000 = {_nanoParaTunelUs} µs.");
+    }
+
+    /// <summary>
+    /// A peça passou de principal para miniatura (ou o contrário) e a tela dela é outra (spec 003): troca a saída sem reabrir o decodificador.
+    /// Se o fabricante recusar o SetOutputSurface, reabre no próximo quadro-chave (a imagem daquela peça para por até 2 s).
+    /// </summary>
+    public void TrocarSurface(Surface nova)
+    {
+        lock (_gate)
+        {
+            if (_surface == nova) return;
+            _surface = nova;
+            if (_descartado || _vida is not { } vida) return;
+            try { vida.Codec.SetOutputSurface(nova); }
+            catch (Exception e)
+            {
+                Streemu.Util.Log.Info("Decodificador: o SetOutputSurface falhou, reabrindo no próximo quadro-chave: " + e.Message);
+                _reabrir = true;
+                _esperandoChave = true;
+            }
+        }
     }
 
     /// <summary>O que se sabe da falha de abertura: onde parou, qual decodificador, e o que o Android respondeu.</summary>
@@ -231,7 +252,8 @@ sealed class Decodificador : IDisposable
             bool transitorio = false, recuperavel = false;
             if (e is MediaCodec.CodecException ce)
             {
-                codigo = $"0x{(int)ce.ErrorCode:x8}";   // ErrorCode é enum: "x8" direto nele lança FormatException diag = ce.DiagnosticInfo ?? ""; transitorio = ce.IsTransient; recuperavel = ce.IsRecoverable;
+                codigo = $"0x{(int)ce.ErrorCode:x8}";   // ErrorCode é enum: "x8" direto nele lança FormatException
+                diag = ce.DiagnosticInfo ?? ""; transitorio = ce.IsTransient; recuperavel = ce.IsRecoverable;
                 Streemu.Util.Log.Info($"ERRO: decodificador {nomeCodec} {w}x{h} nível {nivel}, etapa {etapa}: CodecException ErrorCode {codigo}, DiagnosticInfo \"{diag}\", IsTransient {transitorio}, IsRecoverable {recuperavel}.");
             }
             else

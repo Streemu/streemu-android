@@ -200,6 +200,44 @@ static class Aparelho
     }
 
     /// <summary>
+    /// O decodificador aguenta todas estas lives ao mesmo tempo (spec 003)? Confere quantas instâncias ele aceita (<c>MaxSupportedInstances</c>) e soma
+    /// a vazão (largura x altura x quadros/s): pede o ponto de desempenho de uma live do maior tamanho com quadros/s suficientes para a soma. Sem
+    /// pontos de desempenho, usa a taxa declarada. Ex.: <c>Aparelho.AguentaVarias([(1920, 1080, 60), (1920, 1080, 60)], out var motivo)</c>.
+    /// </summary>
+    public static Aguenta AguentaVarias(IReadOnlyList<(int W, int H, int Fps)> lives, out string detalhe)
+    {
+        detalhe = "";
+        if (lives.Count <= 1) return lives.Count == 1 ? AguentaH264(lives[0].W, lives[0].H, lives[0].Fps, out detalhe) : Aguenta.Sim;
+        try
+        {
+            var info = DecodificadorH264();
+            var cap = info?.GetCapabilitiesForType(MediaFormat.MimetypeVideoAvc);
+            var video = cap?.VideoCapabilities;
+            if (info == null || cap == null || video == null) { detalhe = "nenhum decodificador de H.264 encontrado"; return Aguenta.NaoSei; }
+            string nome = info.Name ?? "?";
+            int instancias = cap.MaxSupportedInstances;
+            if (instancias > 0 && instancias < lives.Count) { detalhe = $"{nome} aceita {instancias} vídeo(s) ao mesmo tempo"; return Aguenta.Nao; }
+            var (w, h) = (lives.Max(l => l.W), lives.Max(l => l.H));
+            double pixelsPorSegundo = lives.Sum(l => (double)l.W * l.H * l.Fps);
+            int fpsSomados = (int)Math.Ceiling(pixelsPorSegundo / ((double)w * h));
+            if (!video.IsSizeSupported(w, h)) { detalhe = $"{nome}: {w}x{h} fora do tamanho suportado"; return Aguenta.Nao; }
+            if (OperatingSystem.IsAndroidVersionAtLeast(29) && video.SupportedPerformancePoints is { Count: > 0 } pontos)
+            {
+                var pedido = new MediaCodecInfo.VideoCapabilities.PerformancePoint(w, h, fpsSomados);
+#pragma warning disable CA1416 // idem
+                bool cobre = pontos.Any(p => p.Covers(pedido));
+#pragma warning restore CA1416
+                detalhe = $"{nome}: {lives.Count} lives somam {w}x{h}@{fpsSomados}; os pontos de desempenho {(cobre ? "cobrem" : "NÃO cobrem")}";
+                return cobre ? Aguenta.Sim : Aguenta.Nao;
+            }
+            var taxas = video.GetSupportedFrameRatesFor(w, h);
+            detalhe = $"{nome}: {lives.Count} lives somam {w}x{h}@{fpsSomados}; taxa declarada até {N(taxas?.Upper):0}";
+            return taxas == null ? Aguenta.NaoSei : N(taxas.Upper) >= fpsSomados ? Aguenta.Sim : Aguenta.Nao;
+        }
+        catch (Exception e) { detalhe = "não deu para perguntar ao decodificador: " + e.Message; return Aguenta.NaoSei; }
+    }
+
+    /// <summary>
     /// O decodificador aguenta este tamanho e esta taxa? Confere o que o fabricante declara: os "pontos de desempenho" (Android 10+, quando o fabricante
     /// preenche) e, senão, as taxas de quadros declaradas para o tamanho. <paramref name="detalhe"/> diz o que foi visto, para o log.
     /// </summary>

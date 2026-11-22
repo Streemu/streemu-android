@@ -24,6 +24,8 @@ public sealed class LocalRelay : IDisposable
     public int Port { get; }
     /// <summary>Destino fixo (ffmpeg em modo listener). Se nulo, responde para quem mandou por último (ffplay em modo caller).</summary>
     public IPEndPoint? FixedTarget { get; set; }
+    /// <summary>O tamanho REAL do buffer de recepção do socket, lido de volta depois de pedir 4 MB.</summary>
+    public int ReceiveBufferBytes { get { try { return _sock.ReceiveBufferSize; } catch { return -1; } } }
     public Action<ReadOnlySpan<byte>>? Outgoing;
     public event Action? PacketFromProcess;
 

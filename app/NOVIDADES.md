@@ -1,11 +1,17 @@
 <!--
 Este arquivo é o que a tela "Novidades" do app Android mostra (embutido no app) (spec 002 do streemu-android-dev). Ele é escrito para quem USA o Streemu:
 frases curtas, sem causa técnica e sem nome de pessoa (o arquivo vai para o repositório público).
-PR comum só acrescenta itens em "## Não lançado". Quem faz a entrega renomeia essa seção para "## X.Y.Z — AAAA-MM-DD", com a versão da entrega.
-Cada item é "- **Título:** detalhe." (título até 70 caracteres, detalhe até 220, resumo da versão até 120), o mesmo formato do NOVIDADES.md do Windows.
--->
+PR comum só acrescenta itens em "## 0.1.15 — 2026-11-22
+Assistir várias lives ao mesmo tempo e o Cinema no celular.
 
-# Novidades
+### Novo
+- **Várias lives juntas:** no player, toque em "+" para assistir até 4 lives do grupo. Um botão no canto alterna entre as lives divididas e uma em destaque com as outras embaixo.
+- **Cinema:** a aba Cinema mostra as sessões de filme do grupo. Entre para assistir junto, no mesmo ponto do filme que os outros.
+- **Abrir um filme do celular:** escolha um arquivo, crie a sessão e os amigos assistem pelo PC ou por outro celular, com tocar, pausar e pular juntos.
+- **Áudio e legendas:** no filme, troque a faixa de áudio e quem assiste pela transmissão passa a ouvir a mesma. A legenda aparece só no seu aparelho.
+
+### Melhorias
+- **Assistir sem baixar:** se o filme é do tipo que o seu celular toca, você assiste direto pela transmissão, sem esperar o arquivo.
 
 ## 0.1.14 — 2026-11-22
 A tela Transmitir, a escolha do som e as Novidades dentro do app.

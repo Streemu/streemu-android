@@ -1,7 +1,7 @@
 {
-  "versao": "0.1.14",
-  "versionCode": 15,
-  "notas": "- Texto da aba Grupos no Início sem grupo\n- Subtela abre no topo e detalhe das novidades com maiúscula\n- Novidades do Android na aba Mais\n- Aba Mais: título, cartões e \"Procurar atualização\" como linha\n- Tela Transmitir: \"Som do celular\" ou \"Sem som\"\n- Tela Transmitir: qualidade e \"Começar a transmitir\"\n- Botões da aba Grupos como no mockup",
+  "versao": "0.1.15",
+  "versionCode": 16,
+  "notas": "- Latência do SRT pela ida e volta, telemetria do SRT e aviso de qualidade\n- Cinema no celular: assistir, abrir filmes e trocar o áudio\n- Assistir várias lives ao mesmo tempo no celular, com destaque e botão de layout",
   "obrigatoria": false,
-  "privado": "60170be7d5a5e71b62924d1ee25490588377fb07"
+  "privado": "ad47c4fc2659a734081e926ce18aa82f5b9f09f3"
 }

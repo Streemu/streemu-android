@@ -525,5 +525,5 @@ sealed class Anfitriao : IDisposable
     }
 
     /// <summary>O IP da rede local do celular (para o endereço "dentro da operadora" do código): o mesmo do player, num lugar só (a trava do espelho só libera o IP de lá).</summary>
-    static IPAddress? IpLocal() => PlayerActivity.IpLocal();
+    static IPAddress? IpLocal() => Streemu.Proto.Player.PecaDoPlayer.IpLocal();
 }

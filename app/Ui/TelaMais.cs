@@ -28,6 +28,8 @@ static partial class Telas
         col.AddView(CartaoDoNome(c, trocarApelido));
         col.AddView(TituloDeSecao(c, "Diagnóstico"));
         col.AddView(CartaoDoDiagnostico(c));
+        col.AddView(TituloDeSecao(c, "Ao assistir"));
+        col.AddView(CartaoDoAvisoDeQualidade(c));
         col.AddView(TituloDeSecao(c, "Sobre"));
         col.AddView(CartaoSobre(c, abrirNovidades));
         col.AddView(BotaoSair(c, sair));
@@ -82,6 +84,26 @@ static partial class Telas
         var sobre = Tema.Texto(c, Telemetria.TextoDoAviso, 13, Tema.TextoApagado);
         sobre.SetPadding(Tema.Dp(c, 16), 0, Tema.Dp(c, 16), Tema.Dp(c, 14));
         cartao.AddView(sobre);
+        return cartao;
+    }
+
+    static View CartaoDoAvisoDeQualidade(Context c)
+    {
+        var cartao = Cartao(c);
+        var linha = Tema.Linha(c);
+        linha.SetPadding(Tema.Dp(c, 16), Tema.Dp(c, 12), Tema.Dp(c, 16), Tema.Dp(c, 12));
+        linha.SetMinimumHeight(Tema.Dp(c, 64));
+        linha.Background = Tema.Tocavel(c, Tema.Cartao, 0);
+        linha.Clickable = true;
+        var textos = Tema.Coluna(c);
+        textos.AddView(Tema.Texto(c, "Aviso de qualidade na tela", 16));
+        textos.AddView(Tema.Texto(c, "Um sinal amarelo ou vermelho no canto do vídeo quando a rede, o celular ou quem transmite atrapalha. Vale a partir da próxima live.", 13, Tema.TextoApagado));
+        linha.AddView(textos, Tema.Lp(0, Tema.Ajusta, 1));
+        var chave = new Chave(c);
+        linha.AddView(chave, Tema.Lp(Tema.Dp(c, 52), Tema.Dp(c, 32)));
+        chave.Ligada = Streemu.Proto.Player.AvisoDeQualidade.Ligado(c);
+        linha.Click += (_, _) => { bool novo = !Streemu.Proto.Player.AvisoDeQualidade.Ligado(c); Streemu.Proto.Player.AvisoDeQualidade.Definir(c, novo); chave.Ligada = novo; };
+        cartao.AddView(linha);
         return cartao;
     }
 

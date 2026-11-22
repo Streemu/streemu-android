@@ -203,7 +203,7 @@ public partial class MainActivity
                                        AbrirTelaTransmitir, ServicoTransmissao.Parar, ConvidarParaOGrupo, EscolherGrupo),
             Aba.Grupos => Telas.Grupos(this, Assistir, () => Convites.PedirCriacao(this), () => Convites.PedirConvite(this),
                                       g => Convites.Convidar(this, g), g => Convites.ConfirmarSaidaDoGrupo(this, g)),
-            Aba.Cinema => Telas.EmBreve(this, Resource.Drawable.mumu_pipoca, "Cinema em breve", "Assistir filmes junto com o grupo, no mesmo ritmo."),
+            Aba.Cinema => Telas.Cinema(this, TenhoOArquivo, BaixarOFilme, AssistirBaixado, a => Filme.BaixarFilme.Parar(Streemu.Util.JsonSeguro.Texto(a["filme"]) ?? ""), AssistirPelaTransmissao, CriarSessao),
             Aba.Arquivos => Telas.EmBreve(this, Resource.Drawable.mumu_dormindo, "Arquivos em breve", "Enviar fotos, vídeos e documentos direto para um amigo."),
             _ => Telas.Mais(this, TrocarApelido, ConfirmarSaida, () => AbrirSubtela(Subtela.Novidades)),
         };

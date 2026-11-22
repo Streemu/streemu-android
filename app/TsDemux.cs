@@ -28,6 +28,17 @@ sealed class TsDemux
     public long QuadrosDescartados => _video.Descartados;
     public long DescontinuidadesAudio => _audio.Descontinuidades;
 
+    /// <summary>
+    /// Uma ligação SRT nova começa do zero: esquece o resto de pacote, o contador de continuidade e o PES em montagem dos dois fluxos, para o primeiro
+    /// pacote da conexão nova não virar "buraco". Mantém os PIDs (a PMT repete a cada instante) e os contadores acumulados. Chamar da mesma thread que alimenta.
+    /// </summary>
+    public void Reiniciar()
+    {
+        _restoLen = 0;
+        _video.Reiniciar();
+        _audio.Reiniciar();
+    }
+
     public void Alimentar(ReadOnlySpan<byte> dados)
     {
         // o SRT entrega 1316 bytes (7 pacotes); se vier quebrado, junta o pedaço com o resto do anterior
@@ -85,6 +96,8 @@ sealed class TsDemux
         int _esperado;   // bytes de dados do PES (0 = não informado)
         long _pts = -1;
         bool _quebrado;
+
+        public void Reiniciar() { _cc = -1; _pes.SetLength(0); _esperado = 0; _pts = -1; _quebrado = false; }
 
         public void Pacote(ReadOnlySpan<byte> carga, bool inicio, int cc)
         {

@@ -12,6 +12,15 @@ public static class JsonSeguro
 
     public static long? Inteiro(JsonNode? n) => n is JsonValue v && v.TryGetValue<long>(out var l) ? l : null;
 
+    /// <summary>Número (inteiro ou decimal) como double; nulo se não for número ou não for finito.</summary>
+    public static double? Numero(JsonNode? n)
+    {
+        if (n is not JsonValue v) return null;
+        if (v.TryGetValue<double>(out var d)) return double.IsFinite(d) ? d : null;
+        if (v.TryGetValue<long>(out var l)) return l;
+        return null;
+    }
+
     /// <summary>Uma hora em ms Unix que o DateTimeOffset aceita (de 0 até o ano 9999); fora disso, 0.</summary>
     public static long HoraUnixMs(long ms) => ms is > 0 and <= 253_402_300_799_999 ? ms : 0;
 }
