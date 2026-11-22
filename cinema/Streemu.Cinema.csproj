@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- O núcleo portável do Cinema, copiado do app Windows (ver "De onde veio" no README): linha do tempo (Sessao), identidade do arquivo,
+       fila e a interface do player. net10.0 puro, sem nada do Windows. O app Android e os testes referenciam este projeto. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Streemu.Filme</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../rede/Streemu.Rede.csproj" />
+  </ItemGroup>
+</Project>
