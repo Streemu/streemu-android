@@ -195,8 +195,8 @@ static partial class Telas
     }
 
     /// <summary>
-    /// "Transmitir a tela", no fim do Início. Parado: uma linha (ícone, título, seta) que começa a transmissão na qualidade guardada; a escolha da
-    /// qualidade e do som vira a tela Transmitir (plano 002, tarefa 4). Ao vivo: quantos assistem e "Parar transmissão".
+    /// "Transmitir a tela", no fim do Início. Parado: uma linha (ícone, título, seta) que abre a tela Transmitir. Ao vivo: quantos assistem e
+    /// "Parar transmissão".
     /// </summary>
     static View CartaoDeTransmissao(Context c, GroupRoom? sala, Action transmitir, Action parar)
     {

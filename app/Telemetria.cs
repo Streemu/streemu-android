@@ -55,7 +55,7 @@ static class Telemetria
         set => _prefs.Edit()!.PutBoolean("diagnostico_respondido", value)!.Apply();
     }
 
-    /// <summary>Diagnóstico (aba Conta), ligado por padrão. Desligar para tudo e apaga o que ainda estava no celular; ligar abre uma sessão nova.</summary>
+    /// <summary>Diagnóstico (aba Mais), ligado por padrão. Desligar para tudo e apaga o que ainda estava no celular; ligar abre uma sessão nova.</summary>
     public static bool Ligado
     {
         get => _prefs.GetBoolean("diagnostico_ligado", true);
@@ -71,7 +71,7 @@ static class Telemetria
     public const string TextoDoAviso =
         "O Streemu manda diagnóstico para a equipe consertar bugs: o log do app, dados do celular (modelo, chip, Android, memória, tela, rede) e as " +
         "métricas das lives que você assiste, ligados à sua conta. Sem IP, sem senhas, sem nada das suas outras apps. Só a equipe lê, e os logs ficam " +
-        "guardados 120 dias. Vem ligado, e você pode desligar a qualquer momento na aba Conta. Desligado, nada é gravado nem enviado, e o que ainda " +
+        "guardados 120 dias. Vem ligado, e você pode desligar a qualquer momento na aba Mais. Desligado, nada é gravado nem enviado, e o que ainda " +
         "não tinha subido é apagado do celular. Para apagar o que já foi enviado, peça à equipe.";
 
     public static void Iniciar(Context c, Func<bool, Task<string?>> token, Func<string?> servidor, Func<string> apelido)

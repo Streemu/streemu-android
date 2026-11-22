@@ -26,7 +26,7 @@ static partial class Telas
             col.AddView(AvisoDaAtualizacao(c, nova));
             return Rolagem(c, col);
         }
-        col.AddView(TituloDaTela(c, "Grupos"));
+        col.AddView(TituloComCriar(c, criarGrupo));
         col.AddView(ComMargemDeCima(c, BotoesDeGrupo(c, criarGrupo, entrarComConvite), 8));
         AdicionarGruposDaConta(c, col, convidar, sairDoGrupo);
         if (Sessao.Conta.Grupos.Count == 0) return Rolagem(c, col);   // sem grupo não há sala: os botões acima já dizem o que fazer
@@ -34,10 +34,40 @@ static partial class Telas
         return Rolagem(c, col);
     }
 
+    /// <summary>"Grupos" e, à direita, o "+" do mockup (o mesmo que "Criar grupo").</summary>
+    static View TituloComCriar(Context c, Action criarGrupo)
+    {
+        var linha = Tema.Linha(c);
+        linha.AddView(TituloDaTela(c, "Grupos"), Tema.Lp(0, Tema.Ajusta, 1));
+        var mais = Tema.Texto(c, "+", 24, Tema.DestaqueSuave, negrito: true);
+        mais.Gravity = GravityFlags.Center;
+        mais.Background = Tema.Tocavel(c, Tema.Selecionado, 12);
+        mais.Clickable = true;
+        mais.ContentDescription = "Criar grupo";
+        mais.Click += (_, _) => criarGrupo();
+        var lp = Tema.Lp(Tema.Dp(c, 44), Tema.Dp(c, 44));
+        lp.TopMargin = Tema.Dp(c, 8);
+        linha.AddView(mais, lp);
+        return linha;
+    }
+
+    /// <summary>"Seus grupos" em branco e a contagem numa pílula à direita, como no mockup.</summary>
+    static View CabecalhoDosGrupos(Context c, int quantos)
+    {
+        var linha = Tema.Linha(c);
+        linha.SetPadding(0, Tema.Dp(c, 22), 0, Tema.Dp(c, 2));
+        linha.AddView(Tema.Texto(c, "Seus grupos", 17, negrito: true), Tema.Lp(0, Tema.Ajusta, 1));
+        var pilula = Tema.Texto(c, quantos == 1 ? "1 grupo" : $"{quantos} grupos", 13, Tema.DestaqueSuave, negrito: true);
+        pilula.SetPadding(Tema.Dp(c, 12), Tema.Dp(c, 5), Tema.Dp(c, 12), Tema.Dp(c, 5));
+        pilula.Background = Tema.Forma(c, Tema.Selecionado, 14);
+        linha.AddView(pilula);
+        return linha;
+    }
+
     static void AdicionarGruposDaConta(Context c, LinearLayout col, Action<GrupoDaConta> convidar, Action<GrupoDaConta> sairDoGrupo)
     {
         var grupos = Sessao.Conta.Grupos;
-        col.AddView(TituloDeSecao(c, "Seus grupos", grupos.Count.ToString()));
+        col.AddView(CabecalhoDosGrupos(c, grupos.Count));
         if (grupos.Count == 0)
         {
             var vazio = Cartao(c);
@@ -55,7 +85,7 @@ static partial class Telas
         bool aberto = g.Id == Sessao.GrupoId;
         var k = Tema.Linha(c);
         k.SetPadding(Tema.Dp(c, 14), Tema.Dp(c, 14), Tema.Dp(c, 4), Tema.Dp(c, 14));
-        k.Background = Tema.Tocavel(c, aberto ? Tema.Selecionado : Tema.Cartao, 16, aberto ? Tema.DestaqueSuave : Tema.Borda);
+        k.Background = Tema.Tocavel(c, Tema.Cartao, 16, aberto ? Tema.DestaqueSuave : Tema.Borda);   // o aberto só ganha a borda clara
         k.Clickable = true;
         k.ContentDescription = aberto ? $"{g.Nome}, aberto agora" : $"Abrir o grupo {g.Nome}";
         k.Click += (_, _) => Sessao.AbrirSala(g.Id);

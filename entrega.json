@@ -1,7 +1,7 @@
 {
-  "versao": "0.1.13",
-  "versionCode": 14,
-  "notas": "- Espelho: tira o nome privado de um comentário da barra de cima\n- Aba Grupos no layout do mockup, com papel e tamanho de cada grupo\n- Barra de cima escura com o logo, e o seletor de grupo no Início\n- Início com \"Sua sala\", amigos online e cartão compacto de transmitir\n- Coluna lateral cabe deitado: itens de 64 dp e rolagem\n- Navegação com cinco abas: Início, Grupos, Cinema, Arquivos e Mais\n- Divide Telas.cs e MainActivity.cs por assunto, sem mudar comportamento",
+  "versao": "0.1.14",
+  "versionCode": 15,
+  "notas": "- Texto da aba Grupos no Início sem grupo\n- Subtela abre no topo e detalhe das novidades com maiúscula\n- Novidades do Android na aba Mais\n- Aba Mais: título, cartões e \"Procurar atualização\" como linha\n- Tela Transmitir: \"Som do celular\" ou \"Sem som\"\n- Tela Transmitir: qualidade e \"Começar a transmitir\"\n- Botões da aba Grupos como no mockup",
   "obrigatoria": false,
-  "privado": "d88eeb0e589c6eec428f7facda9d208ddd619633"
+  "privado": "60170be7d5a5e71b62924d1ee25490588377fb07"
 }

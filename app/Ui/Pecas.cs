@@ -38,7 +38,7 @@ static partial class Telas
         // conta sem nenhum grupo: não há o que esperar. É a primeira tela de quem acabou de entrar, então já oferece criar ou entrar
         if (sala == null && !Sessao.AguardandoAtualizacao && Sessao.Conta.Grupos.Count == 0)
         {
-            if (criar == null || entrar == null) return Vazio(c, Resource.Drawable.mumu_dormindo, "Você ainda não está em um grupo", "Crie um grupo ou entre com um convite na aba Grupo.");
+            if (criar == null || entrar == null) return Vazio(c, Resource.Drawable.mumu_dormindo, "Você ainda não está em um grupo", "Crie um grupo ou entre com um convite na aba Grupos.");
             var vazio = Vazio(c, Resource.Drawable.mumu_dormindo, "Você ainda não está em um grupo", "Crie um grupo ou entre com um convite.");
             var botoes = BotoesDeGrupo(c, criar, entrar, vertical: true);
             var lpB = Tema.Lp(Tema.Dp(c, Math.Min(320, Tema.LarguraDp(c) - 48)), Tema.Ajusta);
@@ -92,7 +92,7 @@ static partial class Telas
 
     /// <summary>
     /// O aviso do diagnóstico, no topo da aba Ao vivo até a pessoa responder (como a faixa do app Windows). O diagnóstico vem ligado:
-    /// "Entendi" mantém; "Desligar" desliga de vez (dá para mudar depois na aba Conta).
+    /// "Entendi" mantém; "Desligar" desliga de vez (dá para mudar depois na aba Mais).
     /// </summary>
     static View AvisoDoDiagnostico(Context c)
     {
@@ -236,22 +236,42 @@ static partial class Telas
         return linha;
     }
 
-    /// <summary>"Criar grupo" e "Entrar com convite": lado a lado (na aba Grupo) ou um sobre o outro (no estado vazio do Ao vivo).</summary>
+    /// <summary>"Criar grupo" e "Entrar com convite": lado a lado (na aba Grupos) ou um sobre o outro (no Início, sem grupo).</summary>
     static LinearLayout BotoesDeGrupo(Context c, Action criar, Action entrar, bool vertical = false)
     {
         var caixa = vertical ? Tema.Coluna(c) : Tema.Linha(c);
-        var b1 = Tema.Botao(c, "Criar grupo");
-        var b2 = Tema.Botao(c, "Entrar com convite", principal: false);
-        foreach (var b in new[] { b1, b2 }) b.SetPadding(Tema.Dp(c, 12), 0, Tema.Dp(c, 12), 0);
+        var b1 = BotaoComIcone(c, "Criar grupo", Resource.Drawable.ic_criar_grupo, principal: true);
+        var b2 = BotaoComIcone(c, "Entrar com convite", Resource.Drawable.ic_chave, principal: false);
         b1.Click += (_, _) => criar();
         b2.Click += (_, _) => entrar();
         int vao = Tema.Dp(c, vertical ? 10 : 8);
-        var lp1 = vertical ? Tema.Lp(Tema.Cheio, Tema.Ajusta) : Tema.Lp(0, Tema.Ajusta, 1);
-        var lp2 = vertical ? Tema.Lp(Tema.Cheio, Tema.Ajusta) : Tema.Lp(0, Tema.Ajusta, 1);
+        var lp1 = vertical ? Tema.Lp(Tema.Cheio, Tema.Dp(c, 48)) : Tema.Lp(0, Tema.Dp(c, 48), 1);
+        var lp2 = vertical ? Tema.Lp(Tema.Cheio, Tema.Dp(c, 48)) : Tema.Lp(0, Tema.Dp(c, 48), 1);
         if (vertical) lp2.TopMargin = vao; else lp2.LeftMargin = vao;
         caixa.AddView(b1, lp1);
         caixa.AddView(b2, lp2);
         return caixa;
+    }
+
+    /// <summary>
+    /// Botão de 48 dp com ícone e texto, como os do mockup de Grupos: o principal é cheio (destaque), o outro só tem contorno.
+    /// Ex.: <c>BotaoComIcone(c, "Criar grupo", Resource.Drawable.ic_criar_grupo, principal: true)</c>
+    /// </summary>
+    static LinearLayout BotaoComIcone(Context c, string texto, int icone, bool principal)
+    {
+        var b = Tema.Linha(c, GravityFlags.Center);
+        b.SetPadding(Tema.Dp(c, 10), 0, Tema.Dp(c, 10), 0);
+        b.Background = principal ? Tema.Tocavel(c, Tema.Destaque, 12) : Tema.Tocavel(c, Tema.Cartao, 12, Tema.Borda);
+        b.Clickable = true;
+        b.Focusable = true;
+        b.ContentDescription = texto;
+        b.AddView(Tema.Icone(c, icone, principal ? Color.White : Tema.CorTexto, 18));
+        var t = Tema.Texto(c, texto, 14, principal ? Color.White : Tema.CorTexto, negrito: true);
+        t.SetMaxLines(1);
+        t.Ellipsize = Android.Text.TextUtils.TruncateAt.End;
+        t.SetPadding(Tema.Dp(c, 8), 0, 0, 0);
+        b.AddView(t);
+        return b;
     }
 }
 

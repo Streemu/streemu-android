@@ -38,6 +38,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../rede/Streemu.Rede.csproj" />
+    <!-- a tela Novidades: embutido no código, como no app Windows. Na pasta Assets o aapt2 falha quando o caminho do clone tem acento ("Área de Trabalho") -->
+    <EmbeddedResource Include="NOVIDADES.md" LogicalName="NOVIDADES.md" />
     <!-- lib/arm64-v8a/libsrt.so (nativo/compilar-srt.ps1) entra sozinho: o .NET for Android empacota lib/<abi>/*.so por convenção -->
   </ItemGroup>
 </Project>

@@ -84,7 +84,7 @@ public partial class MainActivity
         toque.Background = Tema.Tocavel(this, Color.Transparent, 24);
         _eu = new Avatar(this);
         toque.AddView(_eu, new FrameLayout.LayoutParams(Tema.Dp(this, 36), Tema.Dp(this, 36), GravityFlags.Center));
-        toque.Click += (_, _) => { _aba = Aba.Mais; MostrarAba(); AoEntrarNaAba(Aba.Mais); };
+        toque.Click += (_, _) => { EsquecerSubtela(); _aba = Aba.Mais; MostrarAba(); AoEntrarNaAba(Aba.Mais); };
         return toque;
     }
 
@@ -120,6 +120,13 @@ public partial class MainActivity
     };
 
     const string ChaveDaAba = "aba_nome";
+
+    /// <summary>"Não lançado" só aparece nas Novidades do build de teste: no publicado, quem entrega já renomeou a seção para a versão.</summary>
+#if DEBUG
+    const bool MostrarNaoLancado = true;
+#else
+    const bool MostrarNaoLancado = false;
+#endif
     Avatar _eu = null!;
 
     /// <summary>
@@ -156,7 +163,9 @@ public partial class MainActivity
             item.Background = Tema.Tocavel(this, Color.Transparent, 16);
             item.Click += (_, _) =>
             {
+                if (_aba == aba && FecharSeAberta()) return;                   // tocar na aba de novo fecha a subtela aberta nela
                 if (_aba == aba) { _telaAtual?.SmoothScrollTo(0, 0); return; }   // tocar na aba atual volta ao topo
+                EsquecerSubtela();
                 _aba = aba;
                 MostrarAba();
                 AoEntrarNaAba(aba);
@@ -183,19 +192,23 @@ public partial class MainActivity
             ((TextView)item.GetChildAt(1)!).SetTextColor(atual ? Tema.CorTexto : Tema.TextoApagado);
             item.Selected = atual;
         }
-        int rolagem = _telaAtual != null && _abaDaTela == _aba ? _telaAtual.ScrollY : 0;
+        // a rolagem só fica na mesma tela: mesma aba e mesma subtela (abrir Novidades com Mais rolada abria Novidades no meio)
+        int rolagem = _telaAtual != null && _abaDaTela == _aba && _subtelaDaTela == _subtela ? _telaAtual.ScrollY : 0;
         _conteudo.RemoveAllViews();
         _telaAtual = _aba switch
         {
+            Aba.Inicio when _subtela == Subtela.Transmitir => Telas.Transmitir(this, FecharSubtela, EscolherQualidade, EscolherSom, ComecarTransmissao),
+            Aba.Mais when _subtela == Subtela.Novidades => Telas.Novidades(this, FecharSubtela, Novidades.Ler(), Atualizacao.VersaoInstalada, MostrarNaoLancado),
             Aba.Inicio => Telas.Inicio(this, Assistir, () => Convites.PedirCriacao(this), () => Convites.PedirConvite(this),
-                                       Transmitir, ServicoTransmissao.Parar, ConvidarParaOGrupo, EscolherGrupo),
+                                       AbrirTelaTransmitir, ServicoTransmissao.Parar, ConvidarParaOGrupo, EscolherGrupo),
             Aba.Grupos => Telas.Grupos(this, Assistir, () => Convites.PedirCriacao(this), () => Convites.PedirConvite(this),
                                       g => Convites.Convidar(this, g), g => Convites.ConfirmarSaidaDoGrupo(this, g)),
             Aba.Cinema => Telas.EmBreve(this, Resource.Drawable.mumu_pipoca, "Cinema em breve", "Assistir filmes junto com o grupo, no mesmo ritmo."),
             Aba.Arquivos => Telas.EmBreve(this, Resource.Drawable.mumu_dormindo, "Arquivos em breve", "Enviar fotos, vídeos e documentos direto para um amigo."),
-            _ => Telas.Conta(this, TrocarApelido, ConfirmarSaida),
+            _ => Telas.Mais(this, TrocarApelido, ConfirmarSaida, () => AbrirSubtela(Subtela.Novidades)),
         };
         _abaDaTela = _aba;
+        _subtelaDaTela = _subtela;
         _conteudo.AddView(_telaAtual);
         // redesenho na mesma aba (chegou uma miniatura, alguém entrou): a rolagem fica onde estava
         if (rolagem > 0) { var t = _telaAtual; t.Post(() => t.ScrollTo(0, rolagem)); }
@@ -210,7 +223,7 @@ public partial class MainActivity
             .PutExtra("jogo", m.Live.Game).PutExtra("qualidade", m.Live.Quality).PutExtra("desde", m.Live.SinceUnixMs));
     }
 
-    /// <summary>"Mudar nome da conta" (aba Conta): grava pelo servidor, e a troca vale em todos os aparelhos.</summary>
+    /// <summary>"Mudar nome da conta" (aba Mais): grava pelo servidor, e a troca vale em todos os aparelhos.</summary>
     void TrocarApelido() => PedirNome("Mudar nome da conta", "É como os amigos veem você em todos os aparelhos.", Sessao.Apelido);
 
     /// <summary>Conta sem nome depois do renovar: o diálogo "Escolha seu nome", uma vez só.</summary>

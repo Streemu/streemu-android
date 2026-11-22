@@ -14,6 +14,18 @@ using Streemu.Util;
 
 namespace Streemu.Proto.Transmissao;
 
+/// <summary>
+/// O som da transmissão (spec 002): o do celular, se a permissão de áudio for dada, ou nenhum, e aí a permissão nem é pedida.
+/// Guardado como a qualidade. Ex.: <c>if (SomDaTransmissao.Ligado(this)) ...</c>
+/// </summary>
+static class SomDaTransmissao
+{
+    public static bool Ligado(Context c) => c.GetSharedPreferences("streemu", FileCreationMode.Private)!.GetBoolean("som_tx", true);
+
+    public static void Escolher(Context c, bool ligado) =>
+        c.GetSharedPreferences("streemu", FileCreationMode.Private)!.Edit()!.PutBoolean("som_tx", ligado)!.Apply();
+}
+
 /// <summary>A qualidade da transmissão (v1: três escolhas simples). O maior lado cabe numa caixa 16:9 e a imagem mantém a proporção da tela, sem esticar.</summary>
 sealed record Qualidade(string Nome, int LadoMaior, int Fps, int Kbps)
 {
@@ -171,7 +183,7 @@ public class ServicoTransmissao : Service
         {
             var (tl, ta) = Qualidade.TelaReal(this);
             var (l, a) = q.Dimensoes(tl, ta);
-            Log.Info($"Transmissão: tela {tl}x{ta}, pedido {q.Nome} ({l}x{a}, {q.Kbps} kbps), áudio {(audio ? "pedido" : "sem permissão")}.");
+            Log.Info($"Transmissão: tela {tl}x{ta}, pedido {q.Nome} ({l}x{a}, {q.Kbps} kbps), áudio {(audio ? "pedido" : "não (sem som escolhido ou sem permissão)")}.");
             audio &= OperatingSystem.IsAndroidVersionAtLeast(29);   // o som dos apps (AudioPlaybackCapture) é do Android 10
             var captura = _captura = new Captura(this, _projecao!, new ConfigCaptura(l, a, q.Fps, q.Kbps, audio));
             captura.Falhou += texto => Encerrar(texto);
