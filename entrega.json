@@ -1,7 +1,7 @@
 {
-  "versao": "0.1.19",
-  "versionCode": 20,
-  "notas": "- Ajustes internos para publicar o envio de arquivo\n- Enviar arquivo: mande e receba arquivos dos amigos pelo celular",
+  "versao": "0.1.20",
+  "versionCode": 21,
+  "notas": "- Telas Arquivos e Grupos mais limpas, com a atividade recente recolhida",
   "obrigatoria": false,
-  "privado": "5fcc79a4fa0c6b0498bb139b8df33b94cc009e46"
+  "privado": "27c9d6a4ac4e51be48495d97ea0faa7a36e627b7"
 }

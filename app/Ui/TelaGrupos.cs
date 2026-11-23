@@ -26,7 +26,7 @@ static partial class Telas
             col.AddView(AvisoDaAtualizacao(c, nova));
             return Rolagem(c, col);
         }
-        col.AddView(TituloComCriar(c, criarGrupo));
+        col.AddView(TituloDaTela(c, "Grupos"));
         col.AddView(ComMargemDeCima(c, BotoesDeGrupo(c, criarGrupo, entrarComConvite), 8));
         AdicionarGruposDaConta(c, col, convidar, sairDoGrupo);
         if (Sessao.Conta.Grupos.Count == 0) return Rolagem(c, col);   // sem grupo não há sala: os botões acima já dizem o que fazer
@@ -34,40 +34,18 @@ static partial class Telas
         return Rolagem(c, col);
     }
 
-    /// <summary>"Grupos" e, à direita, o "+" do mockup (o mesmo que "Criar grupo").</summary>
-    static View TituloComCriar(Context c, Action criarGrupo)
-    {
-        var linha = Tema.Linha(c);
-        linha.AddView(TituloDaTela(c, "Grupos"), Tema.Lp(0, Tema.Ajusta, 1));
-        var mais = Tema.Texto(c, "+", 24, Tema.DestaqueSuave, negrito: true);
-        mais.Gravity = GravityFlags.Center;
-        mais.Background = Tema.Tocavel(c, Tema.Selecionado, 12);
-        mais.Clickable = true;
-        mais.ContentDescription = "Criar grupo";
-        mais.Click += (_, _) => criarGrupo();
-        var lp = Tema.Lp(Tema.Dp(c, 44), Tema.Dp(c, 44));
-        lp.TopMargin = Tema.Dp(c, 8);
-        linha.AddView(mais, lp);
-        return linha;
-    }
-
-    /// <summary>"Seus grupos" em branco e a contagem numa pílula à direita, como no mockup.</summary>
-    static View CabecalhoDosGrupos(Context c, int quantos)
+    static View CabecalhoDosGrupos(Context c)
     {
         var linha = Tema.Linha(c);
         linha.SetPadding(0, Tema.Dp(c, 22), 0, Tema.Dp(c, 2));
         linha.AddView(Tema.Texto(c, "Seus grupos", 17, negrito: true), Tema.Lp(0, Tema.Ajusta, 1));
-        var pilula = Tema.Texto(c, quantos == 1 ? "1 grupo" : $"{quantos} grupos", 13, Tema.DestaqueSuave, negrito: true);
-        pilula.SetPadding(Tema.Dp(c, 12), Tema.Dp(c, 5), Tema.Dp(c, 12), Tema.Dp(c, 5));
-        pilula.Background = Tema.Forma(c, Tema.Selecionado, 14);
-        linha.AddView(pilula);
         return linha;
     }
 
     static void AdicionarGruposDaConta(Context c, LinearLayout col, Action<GrupoDaConta> convidar, Action<GrupoDaConta> sairDoGrupo)
     {
         var grupos = Sessao.Conta.Grupos;
-        col.AddView(CabecalhoDosGrupos(c, grupos.Count));
+        col.AddView(CabecalhoDosGrupos(c));
         if (grupos.Count == 0)
         {
             var vazio = Cartao(c);
@@ -76,7 +54,6 @@ static partial class Telas
             return;
         }
         foreach (var g in grupos) col.AddView(CartaoDeGrupo(c, g, convidar, sairDoGrupo));
-        col.AddView(NotaDosConvites(c));
     }
 
     /// <summary>Um grupo: tocar abre a sala dele; "⋯" convida ou sai. O grupo aberto fica destacado e mostra quem está nele.</summary>
@@ -159,17 +136,6 @@ static partial class Telas
         return b;
     }
 
-    static View NotaDosConvites(Context c)
-    {
-        var linha = Tema.Linha(c);
-        linha.SetPadding(Tema.Dp(c, 4), Tema.Dp(c, 16), Tema.Dp(c, 4), 0);
-        linha.AddView(Tema.Icone(c, Resource.Drawable.ic_info, Tema.TextoApagado, 16));
-        var t = Tema.Texto(c, "Convites privados mantêm cada grupo só entre vocês.", 13, Tema.TextoApagado);
-        t.SetPadding(Tema.Dp(c, 8), 0, 0, 0);
-        linha.AddView(t, Tema.Lp(0, Tema.Ajusta, 1));
-        return linha;
-    }
-
     // ------------------------------------------------------------------------------------ quem está no grupo aberto
 
     static void AdicionarPessoasDoGrupo(Context c, LinearLayout col, Action<Member> assistir)
@@ -210,11 +176,35 @@ static partial class Telas
     static void AdicionarAtividade(Context c, LinearLayout col, GroupRoom sala)
     {
         var frases = FrasesDeAtividade.Montar(sala.Atividades, (_, apelido) => apelido, DateTimeOffset.Now, meuId: sala.MyId);
-        col.AddView(TituloDeSecao(c, "Atividade recente"));
         var ativ = Cartao(c);
         if (frases.Count == 0) ativ.AddView(LinhaSimples(c, FrasesDeAtividade.Vazio));
         foreach (var f in frases) ativ.AddView(LinhaDeAtividade(c, f.Tipo, f.Texto, f.Quando));
+        ativ.Visibility = _atividadeAberta ? ViewStates.Visible : ViewStates.Gone;
+        col.AddView(CabecalhoDaAtividade(c, ativ));
         col.AddView(ativ);
+    }
+
+    /// <summary>Lembra se a lista está aberta entre redesenhos da aba: o padrão é fechada, porque a lista longa empurrava o resto da tela.</summary>
+    static bool _atividadeAberta;
+
+    /// <summary>"Atividade recente" com uma seta: tocar abre ou fecha a lista no lugar, sem redesenhar a tela.</summary>
+    static View CabecalhoDaAtividade(Context c, View lista)
+    {
+        var linha = Tema.Linha(c);
+        linha.SetPadding(0, Tema.Dp(c, 20), 0, Tema.Dp(c, 10));
+        linha.AddView(Tema.Texto(c, "Atividade recente", 14, Tema.DestaqueSuave, negrito: true), Tema.Lp(0, Tema.Ajusta, 1));
+        var seta = Tema.Icone(c, Resource.Drawable.ic_seta_baixo, Tema.DestaqueSuave, 24);
+        seta.Rotation = _atividadeAberta ? 180f : 0f;
+        linha.AddView(seta, Tema.Lp(Tema.Dp(c, 24), Tema.Dp(c, 24)));
+        linha.Clickable = true;
+        linha.ContentDescription = "Mostrar ou esconder a atividade recente";
+        linha.Click += (_, _) =>
+        {
+            _atividadeAberta = !_atividadeAberta;
+            lista.Visibility = _atividadeAberta ? ViewStates.Visible : ViewStates.Gone;
+            seta.Rotation = _atividadeAberta ? 180f : 0f;
+        };
+        return linha;
     }
 
     static View LinhaDeAtividade(Context c, string tipo, string texto, string quando)

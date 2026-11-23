@@ -62,7 +62,6 @@ static partial class Telas
         int m = Margem(c);
         col.SetPadding(m, 0, m, m);
         col.AddView(TituloDaTela(c, "Enviar arquivo"));
-        col.AddView(Tema.Texto(c, "Compartilhe algo direto com um amigo.", 15, Tema.TextoApagado));
         col.AddView(AbasDeArquivos(c, st, a.Redesenhar), Topo(c, 16));
         if (fluxo == null) return Rolagem(c, col);
         if (st.NoHistorico) MontarHistorico(c, col, fluxo, st, a);
@@ -156,9 +155,9 @@ static partial class Telas
     static void MontarEnviar(Context c, LinearLayout col, FluxoDeArquivos fluxo, EstadoDeArquivos st, IReadOnlyList<AmigoDeArquivos> amigos, AcoesDeArquivos a)
     {
         foreach (var p in fluxo.Pedidos.Where(PedidoVisivel)) col.AddView(CartaoDoPedido(c, p, a), Topo(c, 12));
-        col.AddView(CabecalhoDeArquivos(c, "Para quem", st.AmigoId == null ? "Escolha um amigo online" : null));
+        col.AddView(CabecalhoDeArquivos(c, "Para quem", null));
         col.AddView(SeletorDeAmigo(c, st, amigos, a.Redesenhar));
-        col.AddView(CabecalhoDeArquivos(c, "Arquivos", "Vários arquivos"));
+        col.AddView(CabecalhoDeArquivos(c, "Arquivos", null));
         col.AddView(CartaoDeArquivos(c, st, a));
         col.AddView(OndeFicam(c, fluxo), Topo(c, 16));
         col.AddView(CabecalhoDeArquivos(c, "Última transferência", null, () => { st.NoHistorico = true; a.Redesenhar(); }, seta: true));
