@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- O núcleo portável do envio de arquivo (spec 030 do streemu-dev), copiado do app Windows (app/Streemu/Arquivos): as mensagens da sala,
+       a regra do relay, as fases de cada pedido, o histórico e os tipos de arquivo arriscados. net10.0 puro, sem nada do Android nem do Windows.
+       O NomeSeguro mora em cinema/ (mesmo namespace) porque o Cinema também usa. O app e os testes referenciam este projeto. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Streemu.Arquivos</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../rede/Streemu.Rede.csproj" />
+    <ProjectReference Include="../cinema/Streemu.Cinema.csproj" />
+  </ItemGroup>
+</Project>

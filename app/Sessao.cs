@@ -30,6 +30,7 @@ static class Sessao
     {
         if (Iniciada) return;
         Atualizacao.Iniciar(c);
+        EnvioArquivos.EnvioDeArquivos.Iniciar(c);
         Iniciada = true;
         AguardandoAtualizacao = aguardarAtualizacao;
         _prefs = c.GetSharedPreferences("streemu", FileCreationMode.Private)!;
@@ -207,6 +208,8 @@ static class Sessao
             // Cinema: o anúncio das sessões do grupo (filme_aberto/filme_fechado). O resto do filme_* vai pelo túnel; filme_aceito/recusado seguem para a FilmeActivity
             case "filme_aberto": Filme.CinemaSala.Receber(de, apelido, msg); return;
             case "filme_fechado": Filme.CinemaSala.Receber(de, apelido, msg); break;   // a FilmeActivity também precisa saber (o anfitrião fechou)
+            // Enviar arquivo (spec 030): os pedidos vão ao fluxo; com a seção escondida o app ignora, como uma versão sem o recurso
+            case { } tipo when tipo.StartsWith("arquivo_", StringComparison.Ordinal): EnvioArquivos.EnvioDeArquivos.AoReceber(de, apelido, msg); return;
             // o lado de quem transmite (Anfitriao): quem quer assistir a esta live
             case "quero_assistir":
                 if (Anfitriao.Ativo is { } ao) ao.AoReceber(de, apelido, msg);

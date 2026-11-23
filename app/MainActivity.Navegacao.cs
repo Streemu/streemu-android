@@ -183,6 +183,7 @@ public partial class MainActivity
 
     void MostrarAba()
     {
+        OuvirArquivos();
         foreach (var (aba, item) in _botoesNav)
         {
             bool atual = aba == _aba;
@@ -200,16 +201,21 @@ public partial class MainActivity
             Aba.Inicio when _subtela == Subtela.Transmitir => Telas.Transmitir(this, FecharSubtela, EscolherQualidade, EscolherSom, ComecarTransmissao),
             Aba.Mais when _subtela == Subtela.Novidades => Telas.Novidades(this, FecharSubtela, Novidades.Ler(), Atualizacao.VersaoInstalada, MostrarNaoLancado),
             Aba.Inicio => Telas.Inicio(this, Assistir, () => Convites.PedirCriacao(this), () => Convites.PedirConvite(this),
-                                       AbrirTelaTransmitir, ServicoTransmissao.Parar, ConvidarParaOGrupo, EscolherGrupo),
+                                       AbrirTelaTransmitir, ServicoTransmissao.Parar, ConvidarParaOGrupo, EscolherGrupo,
+                                       EnvioArquivos.EnvioDeArquivos.Liberado ? EnviarArquivoPara : null),
             Aba.Grupos => Telas.Grupos(this, Assistir, () => Convites.PedirCriacao(this), () => Convites.PedirConvite(this),
                                       g => Convites.Convidar(this, g), g => Convites.ConfirmarSaidaDoGrupo(this, g)),
             Aba.Cinema => Telas.Cinema(this, TenhoOArquivo, BaixarOFilme, AssistirBaixado, a => Filme.BaixarFilme.Parar(Streemu.Util.JsonSeguro.Texto(a["filme"]) ?? ""), AssistirPelaTransmissao, CriarSessao),
+            Aba.Arquivos when EnvioArquivos.EnvioDeArquivos.Liberado => Telas.Arquivos(this, _estadoArquivos, AcoesArquivos(), EnvioArquivos.EnvioDeArquivos.Fluxo, AmigosOnline()),
             Aba.Arquivos => Telas.EmBreve(this, Resource.Drawable.mumu_dormindo, "Arquivos em breve", "Enviar fotos, vídeos e documentos direto para um amigo."),
             _ => Telas.Mais(this, TrocarApelido, ConfirmarSaida, () => AbrirSubtela(Subtela.Novidades)),
         };
         _abaDaTela = _aba;
         _subtelaDaTela = _subtela;
         _conteudo.AddView(_telaAtual);
+        // o botão "Enviar arquivos" fica fixo no rodapé da aba Enviar, por cima do fim da rolagem (mockup do projeto)
+        if (_aba == Aba.Arquivos && EnvioArquivos.EnvioDeArquivos.Liberado && EnvioArquivos.EnvioDeArquivos.Fluxo != null && !_estadoArquivos.NoHistorico)
+            _conteudo.AddView(Telas.RodapeDeArquivos(this, _estadoArquivos, AcoesArquivos()), new FrameLayout.LayoutParams(Tema.Cheio, Tema.Ajusta, Android.Views.GravityFlags.Bottom));
         // redesenho na mesma aba (chegou uma miniatura, alguém entrou): a rolagem fica onde estava
         if (rolagem > 0) { var t = _telaAtual; t.Post(() => t.ScrollTo(0, rolagem)); }
     }

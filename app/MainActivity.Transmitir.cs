@@ -40,6 +40,7 @@ public partial class MainActivity
     {
         base.OnRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == CodigoPermissoes) PedirProjecao();
+        if (requestCode == CodigoPermissaoArquivos) AoResponderPermissaoDeArquivos();
     }
 
     void PedirProjecao()
@@ -55,6 +56,8 @@ public partial class MainActivity
     protected override void OnActivityResult(int requestCode, Result resultCode, Intent? data)
     {
         base.OnActivityResult(requestCode, resultCode, data);
+        if (requestCode == CodigoEscolherArquivos) { AoEscolherArquivosParaEnviar(resultCode, data); return; }
+        if (requestCode == CodigoEscolherPasta) { AoEscolherPastaDeRecebidos(resultCode, data); return; }
         if (requestCode == CodigoArquivoFilme) { AoEscolherArquivoFilme(resultCode, data); return; }
         if (requestCode == CodigoCriarSessao) { AoEscolherArquivoAnfitriao(resultCode, data); return; }
         if (requestCode != CodigoProjecao) return;

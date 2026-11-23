@@ -15,7 +15,7 @@ static partial class Telas
     // ================================================================================================ Início
 
     /// <summary>Monta o Início inteiro. Ex.: <c>Telas.Inicio(this, Assistir, criar, entrar, Transmitir, ServicoTransmissao.Parar, ConvidarParaOGrupo, EscolherGrupo)</c></summary>
-    public static ScrollView Inicio(Context c, Action<Member> assistir, Action criarGrupo, Action entrarComConvite, Action transmitir, Action parar, Action convidar, Action<View> escolherGrupo)
+    public static ScrollView Inicio(Context c, Action<Member> assistir, Action criarGrupo, Action entrarComConvite, Action transmitir, Action parar, Action convidar, Action<View> escolherGrupo, Action<Member>? enviarArquivo = null)
     {
         var sala = Sessao.Sala;
         var col = Tema.Coluna(c);
@@ -32,7 +32,7 @@ static partial class Telas
             return Rolagem(c, col);
         }
         AdicionarLives(c, col, sala!, assistir);
-        AdicionarAmigosOnline(c, col, sala!, assistir, convidar);
+        AdicionarAmigosOnline(c, col, sala!, assistir, convidar, enviarArquivo);
         col.AddView(CartaoDeTransmissao(c, sala, transmitir, parar));
         return Rolagem(c, col);
     }
@@ -134,28 +134,37 @@ static partial class Telas
     }
 
     /// <summary>A fileira de amigos online (quem está ao vivo primeiro, com o anel vermelho) e, no fim, "Convidar". Rola de lado se não couber.</summary>
-    static void AdicionarAmigosOnline(Context c, LinearLayout col, GroupRoom sala, Action<Member> assistir, Action convidar)
+    static void AdicionarAmigosOnline(Context c, LinearLayout col, GroupRoom sala, Action<Member> assistir, Action convidar, Action<Member>? enviarArquivo)
     {
         var amigos = sala.Friends.OrderByDescending(f => f.Live != null).ThenBy(f => f.Nick, StringComparer.CurrentCultureIgnoreCase).ToList();
         col.AddView(TituloDeSecao(c, "Amigos online", amigos.Count.ToString()));
         var fileira = Tema.Linha(c, GravityFlags.Top);
-        foreach (var f in amigos) fileira.AddView(AmigoNaFileira(c, f, assistir));
+        foreach (var f in amigos) fileira.AddView(AmigoNaFileira(c, f, assistir, enviarArquivo));
         fileira.AddView(BotaoConvidar(c, convidar));
         var rolagem = new HorizontalScrollView(c) { HorizontalScrollBarEnabled = false };
         rolagem.AddView(fileira);
         col.AddView(rolagem, Tema.Lp(Tema.Cheio, Tema.Ajusta));
     }
 
-    static View AmigoNaFileira(Context c, Member m, Action<Member> assistir)
+    /// <summary>
+    /// Um amigo na fileira. Ao vivo: o toque assiste. Sem live: o toque abre "Enviar arquivo" com ele já escolhido (spec 030, D9). Ao vivo, o
+    /// envio fica no toque longo, para o toque curto não mudar o que ele fazia.
+    /// </summary>
+    static View AmigoNaFileira(Context c, Member m, Action<Member> assistir, Action<Member>? enviarArquivo)
     {
         bool aoVivo = m.Live != null;
         var av = new Avatar(c);
         av.Mostrar(m.Id, m.Nick, Sessao.Avatar(m.Id), aoVivo);
         var item = ItemDaFileira(c, av, m.Nick, aoVivo ? null : Tema.Ok);
-        item.ContentDescription = aoVivo ? $"Assistir {m.Nick}" : $"{m.Nick}, online";
-        if (!aoVivo) return item;
+        item.ContentDescription = aoVivo ? $"Assistir {m.Nick}" : enviarArquivo != null ? $"Enviar arquivo para {m.Nick}" : $"{m.Nick}, online";
+        if (enviarArquivo != null)
+        {
+            item.LongClickable = true;
+            item.LongClick += (_, e) => { enviarArquivo(m); e.Handled = true; };
+        }
+        if (!aoVivo && enviarArquivo == null) return item;
         item.Clickable = true;
-        item.Click += (_, _) => assistir(m);
+        item.Click += (_, _) => { if (aoVivo) assistir(m); else enviarArquivo!(m); };
         return item;
     }
 

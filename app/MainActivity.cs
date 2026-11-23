@@ -56,6 +56,7 @@ public partial class MainActivity : Android.App.Activity
         // o link do convite vem só na primeira criação: girar a tela ou voltar pelo Recentes reentrega o mesmo Intent
         if (savedInstanceState == null && (Intent == null || (Intent.Flags & ActivityFlags.LaunchedFromHistory) == 0)) Convites.Receber(this, Intent);
         _aba = AbaSalva(savedInstanceState);
+        if (savedInstanceState == null) ReceberCompartilhamento(Intent);   // Compartilhar → Streemu (spec 030)
         _esperandoCodigo = savedInstanceState?.GetBoolean("esperando") ?? false;
         Janela.BordaABorda(this);
         _raiz = new FrameLayout(this);
@@ -72,6 +73,7 @@ public partial class MainActivity : Android.App.Activity
         base.OnNewIntent(intent);
         if (intent == null) return;
         Intent = intent;   // o equivalente a SetIntent: getIntent() passa a ser o link novo
+        ReceberCompartilhamento(intent);
         if (_raiz == null) return;
         Convites.Receber(this, intent);
         if (!_mostrandoInicio && Convites.Pendente(this) != null) Montar();   // sem conta: a entrada passa a mostrar o aviso do convite
@@ -121,6 +123,7 @@ public partial class MainActivity : Android.App.Activity
     protected override void OnResume()
     {
         base.OnResume();
+        EnvioArquivos.EnvioDeArquivos.AoVoltarParaFrente(this);   // religa o serviço de arquivos se o Android o pausou (spec 030)
         if (_raiz == null) return;
         Atualizacao.Mostrar(this);
         // voltando do navegador: o campo do código já pronto para digitar

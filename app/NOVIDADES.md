@@ -5,7 +5,13 @@ PR comum só acrescenta itens em "## Não lançado" (no topo, antes da última v
 -->
 
 ## Não lançado
-Cinema no celular mais firme para quem entra na sessão.
+Enviar arquivos para os amigos e o Cinema no celular mais firme.
+
+### Novo
+- **Enviar arquivo:** na aba Arquivos, escolha um amigo que está online, escolha fotos, vídeos ou documentos e envie direto do seu celular. Quem recebe aceita, o arquivo chega conferido na pasta Downloads/Streemu e, se a conexão cair, continua de onde parou.
+- **Receber arquivo:** quando um amigo quer te mandar algo, aparece um aviso com Aceitar e Recusar, também com o app em segundo plano. No histórico, "Pedir de novo" busca o arquivo outra vez.
+- **Compartilhar para o Streemu:** em qualquer app (galeria, arquivos), toque em Compartilhar e escolha o Streemu para mandar o que você abriu.
+- **Dados móveis:** antes de baixar um arquivo grande fora do Wi-Fi, o app mostra quanto vai gastar do seu plano e pergunta.
 
 ### Melhorias
 - **Entrar no Cinema:** quem entra com o filme já rolando não fica mais esperando a imagem por muito tempo.

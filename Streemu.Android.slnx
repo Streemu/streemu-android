@@ -5,6 +5,9 @@
   <Folder Name="/cinema/">
     <Project Path="cinema/Streemu.Cinema.csproj" />
   </Folder>
+  <Folder Name="/arquivos/">
+    <Project Path="arquivos/Streemu.Arquivos.csproj" />
+  </Folder>
   <Folder Name="/envio/">
     <Project Path="envio/Streemu.Envio.csproj" />
   </Folder>
@@ -17,5 +20,8 @@
   </Folder>
   <Folder Name="/testes/Cinema/">
     <Project Path="testes/Cinema/Cinema.Testes.csproj" />
+  </Folder>
+  <Folder Name="/testes/Arquivos/">
+    <Project Path="testes/Arquivos/Arquivos.Testes.csproj" />
   </Folder>
 </Solution>
