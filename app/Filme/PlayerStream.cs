@@ -35,6 +35,14 @@ public sealed class PlayerStream : IPlayerFilme
     int _epoca = -1, _irGen, _aberturas;
     readonly System.Diagnostics.Stopwatch _pediu = new();
     CacheTs? _pediuNaEpoca;
+    readonly System.Diagnostics.Stopwatch _pediuNaEpocaEm = new();
+
+    /// <summary>Logcat e log do app: só o log do app vai para a telemetria, e o congelamento de 23/11 num celular de espectador ficou sem prova porque isto só ia para o Logcat.</summary>
+    static void Registrar(string mensagem)
+    {
+        Logcat.Info("Streemu", mensagem);
+        Streemu.Util.Log.Info("[filme] " + mensagem);
+    }
     volatile bool _fechado;
 
     /// <summary>O player não achou o ponto no que chegou: pede ao anfitrião para reabrir o envio nele (<c>filme_stream_recarregar</c>).</summary>
@@ -90,7 +98,7 @@ public sealed class PlayerStream : IPlayerFilme
             if (velha != null && velha != _tocando) velha.Dispose();
         }
         EpocasRecebidas++;
-        Logcat.Info("Streemu", FormattableString.Invariant($"FILME época {numero} recebida: o anfitrião manda a partir de {pos:F1} s."));
+        Registrar(FormattableString.Invariant($"FILME época {numero} recebida: o anfitrião manda a partir de {pos:F1} s."));
         EpocaNova?.Invoke(numero);
         int gen = _irGen;
         if (_tocando != null) _ = Task.Run(() => SeguirEpocaAsync(c, gen));
@@ -114,7 +122,7 @@ public sealed class PlayerStream : IPlayerFilme
                     double pos = await PosicaoAsync();
                     if (nova.Procurar(pos, out long kp, out double kf) == CacheTs.Lugar.Pronto && gen == _irGen)
                     {
-                        Logcat.Info("Streemu", FormattableString.Invariant($"FILME a época anterior acabou em {pos:F1} s: passando para a nova."));
+                        Registrar(FormattableString.Invariant($"FILME a época anterior acabou em {pos:F1} s: passando para a nova."));
                         await Reabrir(nova, kp, kf, pos, gen);
                         return;
                     }
@@ -122,7 +130,7 @@ public sealed class PlayerStream : IPlayerFilme
                 await Task.Delay(150);
             }
         }
-        catch (Exception e) { Logcat.Info("Streemu", "FILME seguir a época: " + e.Message); }
+        catch (Exception e) { Registrar("FILME seguir a época: " + e.Message); }
     }
 
     // ------------------------------------------------------------------ IPlayerFilme
@@ -147,14 +155,16 @@ public sealed class PlayerStream : IPlayerFilme
                 // só pede depois de a época atual ter mandado dados que não têm o ponto, e uma vez por época: época ainda abrindo (nenhum byte; o anfitrião recomprimindo um 4K
                 // pesado leva vários s) ou pausada esperando só alimentava o laço de épocas do anfitrião (caso de 22/11, um pedido a cada 4 s)
                 bool temDados = c.Bytes > 0 && !double.IsNaN(c.PtsMax);
-                if (temDados && !ReferenceEquals(c, _pediuNaEpoca) && ((r == CacheTs.Lugar.Antes && sw.ElapsedMilliseconds > 2000) || sw.ElapsedMilliseconds > 12000))
+                // o anfitrião pode adiar ou descartar o pedido (época recém-aberta): vale pedir de novo na mesma época depois de 6 s, em vez de esperar os 15 s do fim (caso de 23/11)
+                bool jaPediu = ReferenceEquals(c, _pediuNaEpoca) && _pediuNaEpocaEm.IsRunning && _pediuNaEpocaEm.ElapsedMilliseconds < 6000;
+                if (temDados && !jaPediu && ((r == CacheTs.Lugar.Antes && sw.ElapsedMilliseconds > 2000) || sw.ElapsedMilliseconds > 12000))
                 {
-                    _pediuNaEpoca = c;
+                    _pediuNaEpoca = c; _pediuNaEpocaEm.Restart();
                     PedirRecarregar($"o ponto {s:F1} s {(r == CacheTs.Lugar.Antes ? "ficou antes do que chegou" : "não chegou em 12 s")}");
                 }
                 avisou ??= $"o ponto {s:F1} s ainda não chegou (cache: {c.PrimeiraChave:F1} a {c.PtsMax:F1} s)";
             }
-            if (sw.ElapsedMilliseconds > 15000) { Logcat.Info("Streemu", "FILME " + (avisou ?? "sem época") + ": desisti de esperar."); return; }
+            if (sw.ElapsedMilliseconds > 15000) { Registrar("FILME " + (avisou ?? "sem época") + ": desisti de esperar."); return; }
             await Task.Delay(150);
         }
     }
@@ -164,7 +174,7 @@ public sealed class PlayerStream : IPlayerFilme
         if (_pediu.IsRunning && _pediu.ElapsedMilliseconds < 4000) return;
         _pediu.Restart();
         RecargasPedidas++;
-        Logcat.Info("Streemu", "FILME pedindo ao anfitrião para reabrir o envio: " + motivo + ".");
+        Registrar("FILME pedindo ao anfitrião para reabrir o envio: " + motivo + ".");
         Recarregar?.Invoke();
     }
 
@@ -184,7 +194,7 @@ public sealed class PlayerStream : IPlayerFilme
             antigo = _tocando; _tocando = c; _base = kf; _inicioPts = kf;
         });
         _aberturas++;
-        Logcat.Info("Streemu", FormattableString.Invariant($"FILME fonte aberta no cache: ponto {s:F2} s, quadro-chave {kf:F2} s (byte {pos}), base {kf:F2}."));
+        Registrar(FormattableString.Invariant($"FILME fonte aberta no cache: ponto {s:F2} s, quadro-chave {kf:F2} s (byte {pos}), base {kf:F2}."));
         if (antigo != null && antigo != c) { bool deMenos; lock (_g) deMenos = antigo != _ultima; if (deMenos) antigo.Dispose(); }
     }
 

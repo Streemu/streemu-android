@@ -1,7 +1,7 @@
 {
-  "versao": "0.1.16",
-  "versionCode": 17,
-  "notas": "- Cinema no celular e várias lives ao mesmo tempo",
+  "versao": "0.1.17",
+  "versionCode": 18,
+  "notas": "- Tira um nome de pessoa de um comentario (a trava de nomes barrou o espelho)\n- Adia o pedido de recarga de quem entra no Cinema e manda o log do player para a telemetria",
   "obrigatoria": false,
-  "privado": "2b02deb2b3e4fd68c209ed9671b5af08e98ecdfb"
+  "privado": "a333f45f4b14d9ed6ac00266c8b701bed7bf38a9"
 }

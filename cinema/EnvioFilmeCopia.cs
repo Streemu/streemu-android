@@ -233,12 +233,34 @@ public sealed class EnvioFilmeCopia : IDisposable
     /// <summary>Quem assiste não tem o ponto (o cache dele começa depois, ou o fluxo não chegou): abre uma época nova no ponto da Sessão, no máximo uma a cada 3 s.</summary>
     public void Recarregar(string quem)
     {
+        double faltaS;
+        int epocaDoPedido;
         lock (_gate)
         {
-            if (_fim || _saidas.Count == 0 || _epocaRelogio.Elapsed.TotalSeconds < 3 || _saltoPendente) return;   // com um pulo pendente, a época dele já vem
+            if (_fim || _saidas.Count == 0 || _saltoPendente) return;   // com um pulo pendente, a época dele já vem
+            faltaS = IdadeMinimaDaEpocaS - _epocaRelogio.Elapsed.TotalSeconds;
+            epocaDoPedido = _epoca;
+            if (faltaS <= 0) { IniciarEpocaLocked(PosicaoLocked(), $"{quem} não tinha o trecho guardado"); return; }
+            if (_recargaAdiada) return;
+            _recargaAdiada = true;
+        }
+        // caso de 22/11: quem entra provoca uma época para todos e pede recarga na hora; descartar o pedido deixava o celular esperando 15 s por um trecho que ninguém ia mandar
+        Log.Info($"[filme] pedido de {quem} chegou {IdadeMinimaDaEpocaS - faltaS:0.0} s depois da época {epocaDoPedido}; reabro em {faltaS:0.0} s se ainda for preciso.");
+        _ = Task.Delay(TimeSpan.FromSeconds(faltaS + 0.05)).ContinueWith(_ => RecargaAdiada(quem, epocaDoPedido));
+    }
+
+    void RecargaAdiada(string quem, int epocaDoPedido)
+    {
+        lock (_gate)
+        {
+            _recargaAdiada = false;
+            if (_fim || _saidas.Count == 0 || _saltoPendente || _epoca != epocaDoPedido) return;   // outra época abriu nesse meio-tempo: ela já traz o ponto
             IniciarEpocaLocked(PosicaoLocked(), $"{quem} não tinha o trecho guardado");
         }
     }
+
+    const double IdadeMinimaDaEpocaS = 3;
+    bool _recargaAdiada;
 
     // ------------------------------------------------------------------ épocas
 

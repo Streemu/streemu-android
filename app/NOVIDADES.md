@@ -1,7 +1,16 @@
 <!--
 Este arquivo é o que a tela "Novidades" do app Android mostra (embutido no app) (spec 002 do streemu-android-dev). Ele é escrito para quem USA o Streemu:
 frases curtas, sem causa técnica e sem nome de pessoa (o arquivo vai para o repositório público).
-PR comum só acrescenta itens em "## 0.1.16 — 2026-11-22
+PR comum só acrescenta itens em "## Não lançado" (no topo, antes da última versão); quem lança renomeia a seção para a versão.
+-->
+
+## Não lançado
+Cinema no celular mais firme para quem entra na sessão.
+
+### Melhorias
+- **Entrar no Cinema:** quem entra com o filme já rolando não fica mais esperando a imagem por muito tempo.
+
+## 0.1.16 — 2026-11-22
 Assistir várias lives ao mesmo tempo e o Cinema no celular.
 
 ### Novo
