@@ -1,7 +1,7 @@
 {
-  "versao": "0.1.17",
-  "versionCode": 18,
-  "notas": "- Tira um nome de pessoa de um comentario (a trava de nomes barrou o espelho)\n- Adia o pedido de recarga de quem entra no Cinema e manda o log do player para a telemetria",
+  "versao": "0.1.18",
+  "versionCode": 19,
+  "notas": "- Atualização automática volta a funcionar no Android 9 e 10",
   "obrigatoria": false,
-  "privado": "a333f45f4b14d9ed6ac00266c8b701bed7bf38a9"
+  "privado": "183a972d989804b2f6ef98e11dc2a62e1351ce79"
 }

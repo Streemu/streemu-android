@@ -480,12 +480,15 @@ static class Atualizacao
         var pm = _app.PackageManager!;
 #pragma warning disable CS0618, CA1422
         var flags = OperatingSystem.IsAndroidVersionAtLeast(28) ? PackageInfoFlags.SigningCertificates : PackageInfoFlags.Signatures;
-        using var apk = pm.GetPackageArchiveInfo(Caminho, flags);
+        // No Android 9 e 10, o GetPackageArchiveInfo só lê os certificados do APK baixado se receber GET_SIGNATURES. Só com
+        // GET_SIGNING_CERTIFICATES, o SigningInfo vinha nulo e toda atualização falhava com "assinatura" (o Android 11 corrigiu isso).
+        var flagsApk = OperatingSystem.IsAndroidVersionAtLeast(30) ? flags : flags | PackageInfoFlags.Signatures;
+        using var apk = pm.GetPackageArchiveInfo(Caminho, flagsApk);
         using var atual = pm.GetPackageInfo(_app.PackageName!, flags)!;
         if (apk == null || apk.PackageName != atual.PackageName || Codigo(apk) != nova.Codigo || apk.VersionName != nova.Versao)
             throw new InvalidDataException("pacote_ou_versao");
-        IList<Signature>? Assinaturas(PackageInfo info) => OperatingSystem.IsAndroidVersionAtLeast(28)
-            ? info.SigningInfo?.GetApkContentsSigners() : info.Signatures;
+        IList<Signature>? Assinaturas(PackageInfo info) => OperatingSystem.IsAndroidVersionAtLeast(28) && info.SigningInfo != null
+            ? info.SigningInfo.GetApkContentsSigners() : info.Signatures;
 #pragma warning restore CS0618, CA1422
         var confiaveis = Assinaturas(atual);
         var recebidas = Assinaturas(apk);

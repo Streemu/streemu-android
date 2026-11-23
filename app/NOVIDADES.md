@@ -9,6 +9,7 @@ Cinema no celular mais firme para quem entra na sessão.
 
 ### Melhorias
 - **Entrar no Cinema:** quem entra com o filme já rolando não fica mais esperando a imagem por muito tempo.
+- **Atualização no Android 9 e 10:** nesses celulares, o app volta a se atualizar sozinho a partir desta versão.
 
 ## 0.1.16 — 2026-11-22
 Assistir várias lives ao mesmo tempo e o Cinema no celular.
