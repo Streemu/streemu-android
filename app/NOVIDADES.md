@@ -8,6 +8,7 @@ PR comum só acrescenta itens em "## Não lançado" (no topo, antes da última v
 Enviar arquivos para os amigos e o Cinema no celular mais firme.
 
 ### Novo
+- **Avisos por cima da tela:** quando um amigo do seu grupo abre uma live, o celular mostra um aviso na hora, como qualquer app. Pedidos de arquivo também aparecem por cima, com Aceitar e Recusar, sem precisar abrir o Streemu. Funciona com o app fechado (fica um aviso fixo discreto "Streemu conectado") e dá para desligar em Mais, em "Avisos de lives e arquivos".
 - **Enviar arquivo:** na aba Arquivos, escolha um amigo que está online, escolha fotos, vídeos ou documentos e envie direto do seu celular. Quem recebe aceita, o arquivo chega conferido na pasta Downloads/Streemu e, se a conexão cair, continua de onde parou.
 - **Receber arquivo:** quando um amigo quer te mandar algo, aparece um aviso com Aceitar e Recusar, também com o app em segundo plano. No histórico, "Pedir de novo" busca o arquivo outra vez.
 - **Compartilhar para o Streemu:** em qualquer app (galeria, arquivos), toque em Compartilhar e escolha o Streemu para mandar o que você abriu.

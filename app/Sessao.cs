@@ -33,6 +33,7 @@ static class Sessao
         Atualizacao.Iniciar(c);
         EnvioArquivos.EnvioDeArquivos.Iniciar(c);
         Iniciada = true;
+        _app = c.ApplicationContext;
         AguardandoAtualizacao = aguardarAtualizacao;
         OuvirTrocaDeRede(c);
         _prefs = c.GetSharedPreferences("streemu", FileCreationMode.Private)!;
@@ -131,6 +132,11 @@ static class Sessao
         }
     }
 
+    static Context? _app;
+
+    /// <summary>O app está na frente (MainActivity entre OnResume e OnPause)? Os avisos de live ficam calados: a pessoa já está vendo a lista.</summary>
+    public static volatile bool TelaVisivel;
+
     public static void AplicarBloqueioDeAtualizacao()
     {
         if (!Iniciada) return;
@@ -154,6 +160,7 @@ static class Sessao
     {
         FecharSala();
         GrupoId = null;
+        if (_app != null) Avisos.ServicoDeAvisos.Parar(_app);
         await Conta.SairAsync();
         Avisar();
     }
@@ -215,6 +222,7 @@ static class Sessao
             }
             var aoVivo = sala.Friends.Where(m => m.Live != null).Select(m => m.Live!.StreamId).ToHashSet();
             lock (_gate) foreach (var k in _miniaturas.Keys.Where(k => !aoVivo.Contains(k)).ToList()) _miniaturas.Remove(k);
+            if (_app != null) Avisos.AvisoDeLive.Conferir(_app, sala.Friends);
         }
         Avisar();
     }

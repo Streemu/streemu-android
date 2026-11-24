@@ -1,7 +1,7 @@
 {
-  "versao": "0.1.22",
-  "versionCode": 23,
-  "notas": "- Sala do grupo volta quase na hora quando a conexão cai ou a rede muda",
+  "versao": "0.1.23",
+  "versionCode": 24,
+  "notas": "- Avisos por cima da tela de lives de amigos e de pedidos de arquivo",
   "obrigatoria": false,
-  "privado": "a46edc2bf150e871ce40ee31413b34da7e68e529"
+  "privado": "1ea76e0de9daad443852fc7bdb993729cc0109fc"
 }

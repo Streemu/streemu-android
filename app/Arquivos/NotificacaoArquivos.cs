@@ -15,7 +15,7 @@ namespace Streemu.Proto.EnvioArquivos;
 /// </summary>
 static class NotificacaoArquivos
 {
-    public const string CanalAndamento = "arquivos", CanalPedidos = "arquivos-pedidos";
+    public const string CanalAndamento = "arquivos", CanalPedidos = "arquivos-pedidos-alto", CanalPedidosAntigo = "arquivos-pedidos";
     public const int IdDoServico = 4301, IdAvisos = 4302;
     public const string AcaoAceitar = "br.com.streemu.proto.ARQUIVO_ACEITAR", AcaoRecusar = "br.com.streemu.proto.ARQUIVO_RECUSAR", AcaoCancelar = "br.com.streemu.proto.ARQUIVO_CANCELAR";
     public const string AcaoDadosSim = "br.com.streemu.proto.ARQUIVO_DADOS_SIM", AcaoDadosNao = "br.com.streemu.proto.ARQUIVO_DADOS_NAO";
@@ -28,7 +28,8 @@ static class NotificacaoArquivos
         var andamento = new NotificationChannel(CanalAndamento, "Transferências de arquivo", NotificationImportance.Low) { Description = "Aparece enquanto você envia ou recebe arquivos." };
         andamento.SetShowBadge(false);
         gerente.CreateNotificationChannel(andamento);
-        gerente.CreateNotificationChannel(new NotificationChannel(CanalPedidos, "Pedidos de arquivo", NotificationImportance.Default) { Description = "Quando um amigo quer te mandar um arquivo." });
+        gerente.DeleteNotificationChannel(CanalPedidosAntigo);   // era Default (sem pop-up); a importância de um canal criado não muda
+        gerente.CreateNotificationChannel(new NotificationChannel(CanalPedidos, "Pedidos de arquivo", NotificationImportance.High) { Description = "Quando um amigo quer te mandar um arquivo: aparece por cima da tela, com Aceitar e Recusar." });
     }
 
     static NotificationManager Gerente(Context c) => (NotificationManager)c.GetSystemService(Context.NotificationService)!;

@@ -41,6 +41,7 @@ public partial class MainActivity
         base.OnRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == CodigoPermissoes) PedirProjecao();
         if (requestCode == CodigoPermissaoArquivos) AoResponderPermissaoDeArquivos();
+        if (requestCode == Avisos.AvisosDeSegundoPlano.CodigoPermissao) Avisos.AvisosDeSegundoPlano.IniciarSeLigado(this);   // a resposta chegou: se foi sim, liga
     }
 
     void PedirProjecao()

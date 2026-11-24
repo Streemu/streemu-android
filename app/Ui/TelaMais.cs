@@ -28,6 +28,8 @@ static partial class Telas
         col.AddView(CartaoDoNome(c, trocarApelido));
         col.AddView(TituloDeSecao(c, "Diagnóstico"));
         col.AddView(CartaoDoDiagnostico(c));
+        col.AddView(TituloDeSecao(c, "Avisos"));
+        col.AddView(CartaoDosAvisos(c));
         col.AddView(TituloDeSecao(c, "Ao assistir"));
         col.AddView(CartaoDoAvisoDeQualidade(c));
         col.AddView(TituloDeSecao(c, "Sobre"));
@@ -84,6 +86,32 @@ static partial class Telas
         var sobre = Tema.Texto(c, Telemetria.TextoDoAviso, 13, Tema.TextoApagado);
         sobre.SetPadding(Tema.Dp(c, 16), 0, Tema.Dp(c, 16), Tema.Dp(c, 14));
         cartao.AddView(sobre);
+        return cartao;
+    }
+
+    /// <summary>O interruptor dos avisos por cima da tela (live de amigo e pedido de arquivo) com o app fechado; liga o serviço em segundo plano.</summary>
+    static View CartaoDosAvisos(Context c)
+    {
+        var cartao = Cartao(c);
+        var linha = Tema.Linha(c);
+        linha.SetPadding(Tema.Dp(c, 16), Tema.Dp(c, 12), Tema.Dp(c, 16), Tema.Dp(c, 12));
+        linha.SetMinimumHeight(Tema.Dp(c, 64));
+        linha.Background = Tema.Tocavel(c, Tema.Cartao, 0);
+        linha.Clickable = true;
+        var textos = Tema.Coluna(c);
+        textos.AddView(Tema.Texto(c, "Avisos de lives e arquivos", 16));
+        textos.AddView(Tema.Texto(c, "Mostra um aviso por cima da tela quando um amigo abre uma live ou quer te mandar um arquivo (com Aceitar e Recusar), mesmo com o app fechado. Mantém o Streemu conectado em segundo plano, com um aviso fixo discreto.", 13, Tema.TextoApagado));
+        linha.AddView(textos, Tema.Lp(0, Tema.Ajusta, 1));
+        var chave = new Chave(c);
+        linha.AddView(chave, Tema.Lp(Tema.Dp(c, 52), Tema.Dp(c, 32)));
+        chave.Ligada = Streemu.Proto.Avisos.AvisosDeSegundoPlano.Ligado(c);
+        linha.Click += (_, _) =>
+        {
+            bool novo = !Streemu.Proto.Avisos.AvisosDeSegundoPlano.Ligado(c);
+            Streemu.Proto.Avisos.AvisosDeSegundoPlano.Definir(c, novo);
+            chave.Ligada = novo;
+        };
+        cartao.AddView(linha);
         return cartao;
     }
 
