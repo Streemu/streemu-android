@@ -124,6 +124,7 @@ public partial class MainActivity : Android.App.Activity
     {
         base.OnResume();
         EnvioArquivos.EnvioDeArquivos.AoVoltarParaFrente(this);   // religa o serviço de arquivos se o Android o pausou (spec 030)
+        Sessao.ReconectarSala();   // voltou do segundo plano: a conexão pode ter morrido sem aviso
         if (_raiz == null) return;
         Atualizacao.Mostrar(this);
         // voltando do navegador: o campo do código já pronto para digitar

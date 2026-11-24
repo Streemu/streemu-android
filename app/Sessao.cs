@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Android.Content;
 using Android.Graphics;
+using Android.Net;
 using Streemu.Net;
 using Streemu.Proto.Transmissao;
 
@@ -33,6 +34,7 @@ static class Sessao
         EnvioArquivos.EnvioDeArquivos.Iniciar(c);
         Iniciada = true;
         AguardandoAtualizacao = aguardarAtualizacao;
+        OuvirTrocaDeRede(c);
         _prefs = c.GetSharedPreferences("streemu", FileCreationMode.Private)!;
         Streemu.Util.Log.Line += l => Android.Util.Log.Info("Streemu", l);
         Conta = new ContaLeve(System.IO.Path.Combine(c.FilesDir!.AbsolutePath, "conta.json"), "celular (protótipo)", Cofre.Cifrar, Cofre.Abrir, ApelidoAntigo);
@@ -98,6 +100,35 @@ static class Sessao
         sala.Encerrada += _ => Avisar();
         Sala = sala;
         Avisar();
+    }
+
+    /// <summary>O app voltou para a tela (ou a rede mudou): a sala confere a conexão e, se morreu, reconecta na hora em vez de esperar o recuo.</summary>
+    public static void ReconectarSala() => Sala?.ReconectarAgora();
+
+    static ConnectivityManager.NetworkCallback? _redeCallback;
+
+    /// <summary>Quando o Android escolhe outra rede (Wi-Fi ↔ 4G, ou a rede volta), o socket da sala fica morto sem aviso: reconecta já.</summary>
+    static void OuvirTrocaDeRede(Context c)
+    {
+        try
+        {
+            if (c.GetSystemService(Context.ConnectivityService) is not ConnectivityManager cm) return;
+            _redeCallback = new TrocaDeRede();
+            cm.RegisterDefaultNetworkCallback(_redeCallback);
+        }
+        catch (Exception e) { Streemu.Util.Log.Info("[sala] não consegui ouvir a troca de rede: " + e.Message); }
+    }
+
+    sealed class TrocaDeRede : ConnectivityManager.NetworkCallback
+    {
+        Network? _atual;
+        public override void OnAvailable(Network network)
+        {
+            var antes = _atual;
+            _atual = network;
+            if (antes == null || antes.Equals(network)) return;   // a primeira avisada é a rede de agora
+            ReconectarSala();
+        }
     }
 
     public static void AplicarBloqueioDeAtualizacao()

@@ -1,7 +1,7 @@
 {
-  "versao": "0.1.21",
-  "versionCode": 22,
-  "notas": "- Corrige o app que fechava sozinho ao abrir",
+  "versao": "0.1.22",
+  "versionCode": 23,
+  "notas": "- Sala do grupo volta quase na hora quando a conexão cai ou a rede muda",
   "obrigatoria": false,
-  "privado": "2bcf77216c0d915e65f41beaa37d04a4df1a0a47"
+  "privado": "a46edc2bf150e871ce40ee31413b34da7e68e529"
 }

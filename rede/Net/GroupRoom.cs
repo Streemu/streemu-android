@@ -26,6 +26,10 @@ public sealed class GroupRoom : ISala
     readonly Func<bool, Task<string?>> _token;
     readonly CancellationTokenSource _cts = new();
     readonly SemaphoreSlim _sendGate = new(1, 1);
+    /// <summary>Acorda a espera entre tentativas (rede voltou, app voltou para a tela): ver <see cref="ReconectarAgora"/>.</summary>
+    readonly SemaphoreSlim _acordar = new(0);
+    /// <summary>Quando (TickCount64) chegou a última mensagem da sala, "pong" incluso. Silêncio longo = conexão morta sem aviso.</summary>
+    long _ultimoRecebido;
     readonly object _gate = new();
     ClientWebSocket? _ws;
     string _nick;
@@ -143,13 +147,14 @@ public sealed class GroupRoom : ISala
 
     async Task RunAsync()
     {
-        var delay = TimeSpan.FromSeconds(2);
+        var delay = TimeSpan.FromSeconds(1);
         bool loggedDown = false;
         while (!_cts.IsCancellationRequested)
         {
             var ws = new ClientWebSocket();
             bool opened = false;
             bool encerrou = false;
+            long conectouEm = 0;
             bool renovarToken = _renovarToken; _renovarToken = false;
             {
                 string? tk = null;
@@ -159,8 +164,8 @@ public sealed class GroupRoom : ISala
                     // sem sessão no momento (sem rede e token vencido, ou saiu): espera e tenta de novo; quem sai de vez derruba a sala por fora
                     SetStatus("Sem sala do grupo: não consegui renovar sua sessão. Tento de novo sozinho.");
                     ws.Dispose();
-                    try { await Task.Delay(delay, _cts.Token); } catch { break; }
-                    delay = TimeSpan.FromSeconds(Math.Min(60, delay.TotalSeconds * 2));
+                    if (!await EsperarAsync(delay)) break;
+                    delay = ProximaEspera(delay);
                     continue;
                 }
                 ws.Options.SetRequestHeader("Authorization", "Bearer " + tk);
@@ -176,13 +181,15 @@ public sealed class GroupRoom : ISala
                 }
                 _ws = ws;
                 opened = true;
+                conectouEm = Environment.TickCount64;
+                Interlocked.Exchange(ref _ultimoRecebido, conectouEm);
+                while (_acordar.CurrentCount > 0) _acordar.Wait(0);   // pedido de acordar de antes de conectar não vale mais
                 await SendAsync(Hello());
                 if (_live != null) await SendAsync(LiveMessage());
                 Connected = true;
                 SetStatus("Na sala do grupo.");
                 Log.Info("Sala do grupo: conectado.");
                 loggedDown = false;
-                delay = TimeSpan.FromSeconds(2);
                 using var pingCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
                 _ = PingLoopAsync(ws, pingCts.Token);
                 await ReceiveLoopAsync(ws);
@@ -213,7 +220,7 @@ public sealed class GroupRoom : ISala
                     HttpStatusCode.Unauthorized => "a sessão não foi aceita (vou renová-la)",
                     HttpStatusCode.Forbidden => "você não é mais membro deste grupo",
                     HttpStatusCode.NotFound or HttpStatusCode.UpgradeRequired => "o servidor do grupo não achou a sala: quem cuida do Worker precisa publicar a versão nova (relay/LEIA-ME.md)",
-                    0 => "sem resposta (" + e.GetBaseException().Message + ")",
+                    0 => "sem conexão com o servidor, talvez a internet esteja instável (" + e.GetBaseException().Message + ")",
                     var c => $"o servidor respondeu {(int)c}"
                 };
                 SetStatus("Sem sala do grupo: " + why + ". Ela volta sozinha quando der.");
@@ -233,24 +240,72 @@ public sealed class GroupRoom : ISala
                 ws.Dispose();
             }
             if (encerrou) break;
-            try { await Task.Delay(delay, _cts.Token); } catch { break; }
-            delay = TimeSpan.FromSeconds(Math.Min(60, delay.TotalSeconds * 2));
+            // uma conexão que durou (>10 s) e caiu volta na hora; uma que abre e cai logo (servidor recusando) segue o recuo, para não martelar
+            if (conectouEm != 0) delay = Environment.TickCount64 - conectouEm > 10_000 ? TimeSpan.Zero : TimeSpan.FromSeconds(2);
+            if (!await EsperarAsync(delay)) break;
+            delay = ProximaEspera(delay);
         }
     }
 
     bool _renovarToken;
 
+    static TimeSpan ProximaEspera(TimeSpan atual) => TimeSpan.FromSeconds(Math.Min(60, Math.Max(1, atual.TotalSeconds * 2)));
+
+    /// <summary>Espera até <paramref name="espera"/> ou até <see cref="ReconectarAgora"/> acordar. Falso = a sala foi fechada.</summary>
+    async Task<bool> EsperarAsync(TimeSpan espera)
+    {
+        if (espera <= TimeSpan.Zero) return !_cts.IsCancellationRequested;
+        using var parar = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+        var acordou = _acordar.WaitAsync(parar.Token);
+        try { await Task.WhenAny(Task.Delay(espera, parar.Token), acordou); } catch (OperationCanceledException) { }
+        parar.Cancel();
+        return !_cts.IsCancellationRequested;
+    }
+
+    /// <summary>
+    /// A rede mudou ou o app voltou para a tela: tenta já, sem esperar o recuo. Se a sala está caída, acorda a espera; se parece conectada,
+    /// confere com um "ping" e, sem resposta em 3 s, derruba a conexão morta (o Android não avisa o socket quando troca de Wi-Fi para 4G)
+    /// e reconecta na hora. Ex.: <c>sala.ReconectarAgora();</c> no <c>OnResume</c>.
+    /// </summary>
+    public void ReconectarAgora()
+    {
+        var ws = _ws;
+        if (ws == null) { if (_acordar.CurrentCount == 0) _acordar.Release(); return; }
+        _ = SondarAsync(ws);
+    }
+
+    async Task SondarAsync(ClientWebSocket ws)
+    {
+        long antes = Interlocked.Read(ref _ultimoRecebido);
+        try
+        {
+            await EnviarPingAsync(ws, _cts.Token);
+            await Task.Delay(TimeSpan.FromSeconds(3), _cts.Token);
+        }
+        catch (OperationCanceledException) { return; }
+        catch (Exception) { ws.Abort(); return; }
+        if (Interlocked.Read(ref _ultimoRecebido) == antes && ReferenceEquals(ws, _ws)) { Log.Info("Sala do grupo: sem resposta ao ping, derrubando a conexão morta."); ws.Abort(); }
+    }
+
+    static readonly byte[] PingBytes = Encoding.UTF8.GetBytes("ping");
+
+    async Task EnviarPingAsync(ClientWebSocket ws, CancellationToken ct)
+    {
+        await _sendGate.WaitAsync(ct);
+        try { await ws.SendAsync(PingBytes, WebSocketMessageType.Text, true, ct); }
+        finally { _sendGate.Release(); }
+    }
+
     async Task PingLoopAsync(ClientWebSocket ws, CancellationToken ct)
     {
-        var ping = Encoding.UTF8.GetBytes("ping");
         try
         {
             while (!ct.IsCancellationRequested && ws.State == WebSocketState.Open)
             {
                 await Task.Delay(TimeSpan.FromSeconds(25), ct);
-                await _sendGate.WaitAsync(ct);
-                try { await ws.SendAsync(ping, WebSocketMessageType.Text, true, ct); }
-                finally { _sendGate.Release(); }
+                // dois pings sem resposta: a conexão morreu sem avisar; sem isto o receber ficava preso até o TCP desistir (minutos)
+                if (Environment.TickCount64 - Interlocked.Read(ref _ultimoRecebido) > 60_000) { Log.Info("Sala do grupo: 60 s de silêncio, reconectando."); ws.Abort(); return; }
+                await EnviarPingAsync(ws, ct);
             }
         }
         catch { }
@@ -275,6 +330,7 @@ public sealed class GroupRoom : ISala
         while (ws.State == WebSocketState.Open && !_cts.IsCancellationRequested)
         {
             var r = await ws.ReceiveAsync(buf, _cts.Token);
+            Interlocked.Exchange(ref _ultimoRecebido, Environment.TickCount64);
             if (r.MessageType == WebSocketMessageType.Close) break;
             if (!grande && msg.Length + r.Count > MaxMensagemBytes)
             {
