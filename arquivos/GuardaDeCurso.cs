@@ -15,8 +15,6 @@ public sealed record PedidoDeCurso(Sentido Sentido, string Pedido, string AmigoI
 /// </summary>
 public sealed class GuardaDeCurso
 {
-    static readonly JsonSerializerOptions Formato = new() { WriteIndented = false, Converters = { new JsonStringEnumConverter() } };
-
     readonly string? _arquivo;
     readonly Action<string> _log;
     readonly object _trava = new();
@@ -54,7 +52,7 @@ public sealed class GuardaDeCurso
     List<PedidoDeCurso> Carregar()
     {
         if (_arquivo == null || !File.Exists(_arquivo)) return new();
-        try { return JsonSerializer.Deserialize<List<PedidoDeCurso>>(File.ReadAllText(_arquivo), Formato) ?? new(); }
+        try { return JsonSerializer.Deserialize(File.ReadAllText(_arquivo), ContextosJson.Curso.ListPedidoDeCurso) ?? new(); }
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
         {
             _log($"[arquivo] a lista de pedidos em curso estava ilegível, começo vazia: {e.Message}");
@@ -69,7 +67,7 @@ public sealed class GuardaDeCurso
         try
         {
             string texto;
-            lock (_trava) texto = JsonSerializer.Serialize(_pedidos.Values.ToList(), Formato);
+            lock (_trava) texto = JsonSerializer.Serialize(_pedidos.Values.ToList(), ContextosJson.Curso.ListPedidoDeCurso);
             Directory.CreateDirectory(Path.GetDirectoryName(_arquivo)!);
             File.WriteAllText(_arquivo + ".tmp", texto);
             File.Move(_arquivo + ".tmp", _arquivo, overwrite: true);

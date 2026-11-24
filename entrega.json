@@ -1,7 +1,7 @@
 {
-  "versao": "0.1.20",
-  "versionCode": 21,
-  "notas": "- Telas Arquivos e Grupos mais limpas, com a atividade recente recolhida",
+  "versao": "0.1.21",
+  "versionCode": 22,
+  "notas": "- Corrige o app que fechava sozinho ao abrir",
   "obrigatoria": false,
-  "privado": "27c9d6a4ac4e51be48495d97ea0faa7a36e627b7"
+  "privado": "2bcf77216c0d915e65f41beaa37d04a4df1a0a47"
 }

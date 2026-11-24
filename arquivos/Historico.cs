@@ -25,14 +25,12 @@ public sealed class Historico
 {
     public const int MaxItens = 200, MaxDias = 90;
 
-    sealed class Gravado
+    internal sealed class Gravado
     {
         public int V { get; set; } = 1;
         public string? Pasta { get; set; }
         public List<ItemHistorico> Itens { get; set; } = new();
     }
-
-    static readonly JsonSerializerOptions Formato = new() { WriteIndented = true, Converters = { new JsonStringEnumConverter() } };
 
     readonly string? _arquivo;
     readonly Func<DateTime> _agora;
@@ -92,7 +90,7 @@ public sealed class Historico
     Gravado Carregar()
     {
         if (_arquivo == null || !File.Exists(_arquivo)) return new Gravado();
-        try { return JsonSerializer.Deserialize<Gravado>(File.ReadAllText(_arquivo), Formato) ?? new Gravado(); }
+        try { return JsonSerializer.Deserialize(File.ReadAllText(_arquivo), ContextosJson.Historico.Gravado) ?? new Gravado(); }
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
         {
             _log($"[arquivo] histórico ilegível, começo vazio: {e.Message}");
@@ -107,7 +105,7 @@ public sealed class Historico
         try
         {
             string texto;
-            lock (_trava) texto = JsonSerializer.Serialize(_dados, Formato);
+            lock (_trava) texto = JsonSerializer.Serialize(_dados, ContextosJson.Historico.Gravado);
             Directory.CreateDirectory(Path.GetDirectoryName(_arquivo)!);
             File.WriteAllText(_arquivo + ".tmp", texto);
             File.Move(_arquivo + ".tmp", _arquivo, overwrite: true);
