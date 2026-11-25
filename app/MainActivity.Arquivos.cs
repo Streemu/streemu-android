@@ -151,13 +151,15 @@ public partial class MainActivity
         ContinuarAceite(pedido);
     }
 
+    /// <summary>Só os botões decidem: tocar fora ou voltar não aceita o arquivo (o pedido continua esperando, como antes).</summary>
     void ExplicarPermissaoDeArquivos(string pedido) =>
-        new AlertDialog.Builder(this)!
-            .SetTitle("Guardar na pasta Downloads")!
-            .SetMessage("Para guardar o arquivo em Downloads/Streemu, o Android do seu celular pede permissão para gravar arquivos. Se você não permitir, o arquivo fica numa pasta interna do Streemu, mais difícil de achar.")!
-            .SetPositiveButton("Continuar", (_, _) => { _pedidoEsperandoPermissao = pedido; PermissaoDeArmazenamento.Pedir(this, CodigoPermissaoArquivos); })!
-            .SetNegativeButton("Agora não", (_, _) => ContinuarAceite(pedido))!
-            .Show();
+        CaixaDoApp.Mostrar(this, "Guardar na pasta Downloads",
+            "Para guardar o arquivo em Downloads/Streemu, o Android do seu celular pede permissão para gravar arquivos. Se você não permitir, o arquivo fica numa pasta interna do Streemu, mais difícil de achar.",
+            new[]
+            {
+                new BotaoDaCaixa("Agora não", () => ContinuarAceite(pedido)),
+                new BotaoDaCaixa("Continuar", () => { _pedidoEsperandoPermissao = pedido; PermissaoDeArmazenamento.Pedir(this, CodigoPermissaoArquivos); }, Principal: true),
+            });
 
     /// <summary>A resposta do sistema à permissão de gravar: com ela ou sem ela o arquivo chega (sem ela, na pasta interna, com um aviso).</summary>
     void AoResponderPermissaoDeArquivos()
@@ -219,12 +221,14 @@ public partial class MainActivity
     void AbrirArquivoRecebido(ItemHistorico i)
     {
         if (!TipoArriscado.Eh(i.Nome)) { AbrirDeVerdade(i); return; }
-        new AlertDialog.Builder(this)!
-            .SetTitle("Abrir esse arquivo?")!
-            .SetMessage($"\"{i.Nome}\" pode instalar ou executar programas no seu aparelho. Só abra se você confia em {i.Apelido} e esperava esse arquivo.")!
-            .SetPositiveButton("Mostrar na pasta", (_, _) => MostrarArquivoNaPasta(i))!
-            .SetNegativeButton("Abrir mesmo assim", (_, _) => AbrirDeVerdade(i))!
-            .Show();
+        // a opção segura (só mostrar a pasta) é a de destaque; abrir de verdade é o botão neutro. Um embaixo do outro: os dois textos são longos
+        CaixaDoApp.Mostrar(this, "Abrir esse arquivo?",
+            $"\"{i.Nome}\" pode instalar ou executar programas no seu aparelho. Só abra se você confia em {i.Apelido} e esperava esse arquivo.",
+            new[]
+            {
+                new BotaoDaCaixa("Mostrar na pasta", () => MostrarArquivoNaPasta(i), Principal: true),
+                new BotaoDaCaixa("Abrir mesmo assim", () => AbrirDeVerdade(i)),
+            }, empilhar: true);
     }
 
     void AbrirDeVerdade(ItemHistorico i)

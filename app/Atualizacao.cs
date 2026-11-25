@@ -9,6 +9,7 @@ using Android.Content.PM;
 using Android.Net;
 using Android.OS;
 using Android.Widget;
+using Streemu.Proto.Ui;
 using Uri = System.Uri;
 using Environment = System.Environment;
 using OperationCanceledException = System.OperationCanceledException;
@@ -208,16 +209,16 @@ static class Atualizacao
         if (_baixado) { ConfirmarInstalacao(tela, nova); return; }
         if (NoWifi()) { Baixar(nova, instalar: true, exigirWifi: true); return; }
         string tamanho = (nova.Tamanho / (1024.0 * 1024)).ToString("0.0", CultureInfo.CurrentCulture);
-        new AlertDialog.Builder(tela)
-            .SetTitle("Baixar usando dados móveis?")!
-            .SetMessage($"A atualização ocupa {tamanho} MB.")!
-            .SetPositiveButton("Baixar", (_, _) =>
+        // só o botão Cancelar conta como recusa (toque fora e voltar não registram nada, como antes)
+        CaixaDoApp.Mostrar(tela, "Baixar usando dados móveis?", $"A atualização ocupa {tamanho} MB.", new[]
+        {
+            new BotaoDaCaixa("Cancelar", () => Evento(VersaoInstalada, nova.Versao, "recusou", "dados_moveis")),
+            new BotaoDaCaixa("Baixar", () =>
             {
                 if (_tela == tela && !Ocupado && !EmLive && Disponivel == nova)
                     Baixar(nova, instalar: true, exigirWifi: false);
-            })!
-            .SetNegativeButton("Cancelar", (_, _) => Evento(VersaoInstalada, nova.Versao, "recusou", "dados_moveis"))!
-            .Show();
+            }, Principal: true),
+        });
     }
 
     static void TentarNoWifi()
@@ -284,26 +285,24 @@ static class Atualizacao
             return;
         }
 
-        new AlertDialog.Builder(tela)
-            .SetTitle("Permitir que o Streemu instale a atualização")!
-            .SetMessage("Nas configurações do Android, permita a instalação de apps pelo Streemu. Depois, volte para confirmar a atualização.")!
-            .SetPositiveButton("Abrir configurações", (_, _) =>
-            {
-                _permissaoPara = nova.Codigo;
-                try
-                {
-                    tela.StartActivity(new Intent(Android.Provider.Settings.ActionManageUnknownAppSources,
-                        Android.Net.Uri.Parse("package:" + _app.PackageName)));
-                }
-                catch (ActivityNotFoundException)
-                {
-                    _permissaoPara = null;
-                    Avisar("Abra as configurações do Android para permitir a instalação pelo Streemu.");
-                }
-            })!
-            .SetNegativeButton("Cancelar", (_, _) => RecusarInstalacao(nova))!
-            .SetOnCancelListener(new AoCancelar(() => RecusarInstalacao(nova)))!
-            .Show();
+        // Cancelar, toque fora e voltar recusam a instalação
+        CaixaDoApp.Confirmar(tela, "Permitir que o Streemu instale a atualização",
+            "Nas configurações do Android, permita a instalação de apps pelo Streemu. Depois, volte para confirmar a atualização.",
+            "Abrir configurações", () => AbrirConfiguracoesDeInstalacao(tela, nova), aoRecusar: () => RecusarInstalacao(nova));
+    }
+
+    static void AbrirConfiguracoesDeInstalacao(MainActivity tela, VersaoDisponivel nova)
+    {
+        _permissaoPara = nova.Codigo;
+        try
+        {
+            tela.StartActivity(new Intent(Android.Provider.Settings.ActionManageUnknownAppSources, Android.Net.Uri.Parse("package:" + _app.PackageName)));
+        }
+        catch (ActivityNotFoundException)
+        {
+            _permissaoPara = null;
+            Avisar("Abra as configurações do Android para permitir a instalação pelo Streemu.");
+        }
     }
 
     static void RecusarInstalacao(VersaoDisponivel nova)
@@ -311,11 +310,6 @@ static class Atualizacao
         ApagarApk();
         Evento(VersaoInstalada, nova.Versao, "recusou", "permissao");
         Mudou?.Invoke();
-    }
-
-    sealed class AoCancelar(Action cancelar) : Java.Lang.Object, IDialogInterfaceOnCancelListener
-    {
-        public void OnCancel(IDialogInterface? dialog) => cancelar();
     }
 
     static void Instalar(VersaoDisponivel nova)

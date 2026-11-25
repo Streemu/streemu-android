@@ -1,7 +1,7 @@
 {
-  "versao": "0.1.27",
-  "versionCode": 28,
-  "notas": "- Deixa as caixas e menus do app no visual do Streemu",
+  "versao": "0.1.28",
+  "versionCode": 29,
+  "notas": "- Deixa as caixas de atualização e de arquivos no visual do Streemu",
   "obrigatoria": false,
-  "privado": "8505d53b832eb5b17f86dcd0d6180424010beb84"
+  "privado": "992c989beee0f5bfb07aa749f74ff316bbf7e4dd"
 }

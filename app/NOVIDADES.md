@@ -4,6 +4,12 @@ frases curtas, sem causa técnica e sem nome de pessoa (o arquivo vai para o rep
 PR comum só acrescenta itens em "## Não lançado" (no topo, antes da última versão); quem lança renomeia a seção para a versão.
 -->
 
+## 0.1.28 — 2026-11-25
+Os últimos avisos com a cara do Streemu.
+
+### Melhorias
+- **Avisos no visual do Streemu:** a pergunta de baixar a atualização usando dados móveis, o pedido para permitir a instalação, o aviso de guardar na pasta Downloads e o aviso antes de abrir um arquivo que pode instalar programas agora seguem o visual do Streemu, nos temas claro e escuro.
+
 ## 0.1.27 — 2026-11-25
 Mais caixas e menus com a cara do Streemu.
 

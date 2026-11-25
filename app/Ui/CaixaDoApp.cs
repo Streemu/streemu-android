@@ -48,7 +48,7 @@ static class CaixaDoApp
             new BotaoDaCaixa(rotuloCancelar, () => { decidiu = true; aoRecusar?.Invoke(); }),
             new BotaoDaCaixa(rotuloConfirmar, () => { decidiu = true; aoConfirmar(); }, Principal: !perigosa, Perigoso: perigosa),
         };
-        var dialogo = Mostrar(tela, titulo, texto, botoes);
+        var dialogo = Mostrar(tela, titulo, texto, botoes, empilhar: rotuloConfirmar.Length > 14);   // rótulo longo não cabe em meia largura
         // toque fora e voltar são "cancelar"; fechar por código (a tela girou ou foi destruída) não é uma decisão da pessoa
         dialogo.CancelEvent += (_, _) => { if (!decidiu) aoRecusar?.Invoke(); };
         return dialogo;
