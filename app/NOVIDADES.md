@@ -4,6 +4,12 @@ frases curtas, sem causa técnica e sem nome de pessoa (o arquivo vai para o rep
 PR comum só acrescenta itens em "## Não lançado" (no topo, antes da última versão); quem lança renomeia a seção para a versão.
 -->
 
+## 0.1.26 — 2026-11-25
+A caixa de trocar o nome ficou com a cara do Streemu.
+
+### Melhorias
+- **Trocar o nome:** a caixa de mudar o nome da conta (em Mais, e na primeira vez que você entra) agora segue o visual do Streemu, nos temas claro e escuro.
+
 ## 0.1.25 — 2026-11-25
 Enviar arquivos para os amigos e o Cinema no celular mais firme.
 

@@ -246,41 +246,22 @@ public partial class MainActivity
     void PedirNome(string titulo, string texto, string inicial)
     {
         _dialogoNome = true;
-        var campo = new EditText(this) { Text = inicial };
-        campo.SetFilters(new Android.Text.IInputFilter[] { new Android.Text.InputFilterLengthFilter(ContaLeve.NomeMaximo) });
-        campo.SetSelectAllOnFocus(true);
-        campo.SetSingleLine(true);
-        var erro = Tema.Texto(this, "", 14, Tema.Erro);
-        erro.Visibility = ViewStates.Gone;
-        var coluna = Tema.Coluna(this);
-        coluna.SetPadding(Tema.Dp(this, 22), Tema.Dp(this, 8), Tema.Dp(this, 22), 0);
-        coluna.AddView(campo);
-        coluna.AddView(erro);
-        var dialogo = new Android.App.AlertDialog.Builder(this, Tema.EstiloDoDialogo)!
-            .SetTitle(titulo)!
-            .SetMessage(texto)!
-            .SetView(coluna)!
-            .SetPositiveButton("Salvar", (IDialogInterfaceOnClickListener?)null)!
-            .SetNegativeButton("Cancelar", (_, _) => { })!
-            .Create()!;
-        dialogo.DismissEvent += (_, _) => _dialogoNome = false;
-        dialogo.Show();
-        // o botão é religado à mão: com erro ou sem rede o diálogo fica aberto e o texto digitado não se perde
-        var salvar = dialogo.GetButton((int)DialogButtonType.Positive)!;
-        salvar.Click += async (_, _) =>
-        {
-            var nome = campo.Text?.Trim() ?? "";
-            if (nome.Length == 0) { erro.Text = "Escreva um nome."; erro.Visibility = ViewStates.Visible; return; }
-            if (nome == Sessao.Conta.Nome) { dialogo.Dismiss(); return; }
-            salvar.Enabled = false;
-            var (ok, aviso) = await Sessao.Conta.MudarNomeAsync(nome);
-            if (ok) { dialogo.Dismiss(); Toast.MakeText(this, "Seu nome agora é " + (Sessao.Conta.Nome ?? nome) + ".", ToastLength.Short)?.Show(); return; }
-            salvar.Enabled = true;
-            erro.Text = aviso ?? "Não deu certo. Tente de novo.";
-            erro.Visibility = ViewStates.Visible;
-        };
-        campo.RequestFocus();
-        MostrarTeclado(campo);
+        CaixaDeTexto.Mostrar(this, titulo, texto, inicial, ContaLeve.NomeMaximo, SalvarNome, () => _dialogoNome = false);
+    }
+
+    /// <summary>
+    /// O "Salvar" da caixa de nome. Devolve null se deu certo (a caixa fecha) ou a frase de erro: com erro ou sem rede a caixa fica aberta e o texto digitado
+    /// não se perde.
+    /// </summary>
+    async Task<string?> SalvarNome(string digitado)
+    {
+        var nome = digitado.Trim();
+        if (nome.Length == 0) return "Escreva um nome.";
+        if (nome == Sessao.Conta.Nome) return null;
+        var (ok, aviso) = await Sessao.Conta.MudarNomeAsync(nome);
+        if (!ok) return aviso ?? "Não deu certo. Tente de novo.";
+        Toast.MakeText(this, "Seu nome agora é " + (Sessao.Conta.Nome ?? nome) + ".", ToastLength.Short)?.Show();
+        return null;
     }
 
     void ConfirmarSaida()

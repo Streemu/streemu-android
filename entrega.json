@@ -1,7 +1,7 @@
 {
-  "versao": "0.1.25",
-  "versionCode": 26,
-  "notas": "- Adiciona foto e GIF de avatar no celular",
+  "versao": "0.1.26",
+  "versionCode": 27,
+  "notas": "- Pequeno ajuste de texto na caixa de nome\n- Deixa a caixa de trocar o nome no visual do app",
   "obrigatoria": false,
-  "privado": "f07f4815c3e75a1629d5a8eb33f325dccf43520e"
+  "privado": "bf5edf350f000ea76d172cd26199e083e92e40d3"
 }
