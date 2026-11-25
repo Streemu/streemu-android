@@ -3,6 +3,7 @@ using Android.Content;
 using Android.Graphics;
 using Android.Net;
 using Streemu.Net;
+using Streemu.Proto.Avatares;
 using Streemu.Proto.Transmissao;
 
 namespace Streemu.Proto;
@@ -12,7 +13,7 @@ namespace Streemu.Proto;
 /// As telas assinam <see cref="Mudou"/> e redesenham (o evento vem de qualquer thread). Mensagens da sala que não são de imagem vão para
 /// <see cref="Mensagem"/> (o player escuta o "aceito").
 /// </summary>
-static class Sessao
+static partial class Sessao
 {
     public static ContaLeve Conta { get; private set; } = null!;
     public static GroupRoom? Sala { get; private set; }
@@ -40,6 +41,8 @@ static class Sessao
         Streemu.Util.Log.Line += l => Android.Util.Log.Info("Streemu", l);
         Conta = new ContaLeve(System.IO.Path.Combine(c.FilesDir!.AbsolutePath, "conta.json"), "celular (protótipo)", Cofre.Cifrar, Cofre.Abrir, ApelidoAntigo);
         Conta.NomeMudou += AoMudarNome;
+        MeuAvatar.Iniciar(c);
+        MeuAvatar.Mudou += () => { AnunciarAvatar(); Avisar(); };
         RelayConfig.Token = () => Conta.AcessoAsync();
         Telemetria.Iniciar(c, forcar => Conta.AcessoAsync(forcar), () => Conta.TemConta ? Conta.Servidor : null, () => Apelido);
         Atualizacao.RegistrarResultadoPendente();
@@ -153,6 +156,7 @@ static class Sessao
         // o Dispose da sala espera o WebSocket fechar (até ~0,8 s): fora da thread da tela, que chama isto ao trocar de grupo e ao sair da conta
         if (s != null) _ = Task.Run(() => { try { s.Dispose(); } catch (Exception e) { Streemu.Util.Log.Info("[sala] fechar: " + e.Message); } });
         lock (_gate) { _miniaturas.Clear(); _avataresPedidos.Clear(); }
+        EsquecerEnviosDeAvatar();
         Filme.CinemaSala.Zerar();
     }
 
@@ -199,12 +203,25 @@ static class Sessao
 
     static readonly object _gate = new();
     static readonly Dictionary<string, Bitmap> _miniaturas = new();   // sala da live -> miniatura
-    static readonly Dictionary<string, Bitmap> _avatares = new();     // conta -> avatar
+    static readonly Dictionary<string, Bitmap> _avatares = new();     // conta -> avatar (o primeiro quadro, se for GIF)
+    static readonly Dictionary<string, Animacao> _animacoes = new();  // conta -> todos os quadros, só de quem tem GIF
     static readonly HashSet<string> _avataresPedidos = new();
     static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(10) };
 
     public static Bitmap? Miniatura(string streamId) { lock (_gate) return _miniaturas.GetValueOrDefault(streamId); }
-    public static Bitmap? Avatar(string conta) { lock (_gate) return _avatares.GetValueOrDefault(conta); }
+    /// <summary>A imagem do avatar de uma conta: a minha foto, se for a minha conta, ou a que o amigo mandou. Null mostra a inicial colorida.</summary>
+    public static Bitmap? Avatar(string conta)
+    {
+        if (conta == Conta.ContaId && MeuAvatar.Atual is { } meu) return meu.Primeiro;
+        lock (_gate) return _avatares.GetValueOrDefault(conta);
+    }
+
+    /// <summary>Os quadros do avatar de GIF de uma conta (o meu ou o de um amigo), ou null se o avatar é parado ou não existe.</summary>
+    public static Animacao? AvatarAnimado(string conta)
+    {
+        if (conta == Conta.ContaId) return MeuAvatar.Atual?.Animacao;
+        lock (_gate) return _animacoes.GetValueOrDefault(conta);
+    }
 
     static void AoMudarSala()
     {
@@ -220,6 +237,7 @@ static class Sessao
                 lock (_gate) pedir = _avataresPedidos.Add(m.Id);
                 if (pedir) _ = sala.SendTo(m.Id, new JsonObject { ["tipo"] = "avatar_pedir" });
             }
+            AnunciarAvatar();   // e o meu para quem ainda não o tem (a mudança de sala e a chegada de amigos passam por aqui)
             var aoVivo = sala.Friends.Where(m => m.Live != null).Select(m => m.Live!.StreamId).ToHashSet();
             lock (_gate) foreach (var k in _miniaturas.Keys.Where(k => !aoVivo.Contains(k)).ToList()) _miniaturas.Remove(k);
             if (_app != null) Avisos.AvisoDeLive.Conferir(_app, sala.Friends);
@@ -242,8 +260,9 @@ static class Sessao
         {
             case "miniatura": Miniatura(msg); return;
             case "avatar": _ = AvatarAsync(de, msg); return;
-            // a v1 de transmitir não manda miniatura nem avatar (o cartão do amigo fica sem imagem): o PC que pede não recebe resposta
-            case "avatar_pedir": case "miniatura_pedir": return;
+            // a v1 de transmitir não manda miniatura (o cartão do live fica sem imagem): o PC que pede não recebe resposta. O avatar é respondido acima (spec 005)
+            case "avatar_pedir": AoPedirAvatar(de); return;
+            case "miniatura_pedir": return;
             // Cinema: o anúncio das sessões do grupo (filme_aberto/filme_fechado). O resto do filme_* vai pelo túnel; filme_aceito/recusado seguem para a FilmeActivity
             case "filme_aberto": Filme.CinemaSala.Receber(de, apelido, msg); return;
             case "filme_fechado": Filme.CinemaSala.Receber(de, apelido, msg); break;   // a FilmeActivity também precisa saber (o anfitrião fechou)
@@ -295,17 +314,15 @@ static class Sessao
             switch (msg["fonte"]?.GetValue<string>())
             {
                 case "imagem" when msg["dados"]?.GetValue<string>() is { Length: > 0 and < 400_000 } b64:
-                    bmp = Decodificar(Convert.FromBase64String(b64), 1024, 512);
-                    // "tira" é uma fileira de quadros de uma animação: o primeiro quadrado basta para o celular
-                    if (bmp != null && msg["formato"]?.GetValue<string>() == "tira" && bmp.Width > bmp.Height)
-                        bmp = Bitmap.CreateBitmap(bmp, 0, 0, bmp.Height, bmp.Height);
+                    bmp = ImagemDeAmigo(conta, Convert.FromBase64String(b64), msg["formato"]?.GetValue<string>());
                     break;
                 case "discord" when UrlDoDiscord(msg["id"]?.GetValue<string>(), msg["codigo"]?.GetValue<string>()) is { } url:
                     var bytes = await _http.GetByteArrayAsync(url);
                     if (bytes.Length < 2_000_000) bmp = Decodificar(bytes, 1024, 1024);
+                    if (bmp != null) lock (_gate) _animacoes.Remove(conta);
                     break;
                 case "nenhum":
-                    lock (_gate) _avatares.Remove(conta);
+                    lock (_gate) { _avatares.Remove(conta); _animacoes.Remove(conta); }
                     Avisar();
                     return;
             }

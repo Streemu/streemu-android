@@ -155,6 +155,7 @@ static partial class Telas
         bool aoVivo = m.Live != null;
         var av = new Avatar(c);
         av.Mostrar(m.Id, m.Nick, Sessao.Avatar(m.Id), aoVivo);
+        av.AnimarSozinho();   // GIF de amigo online mexe sozinho aqui (no máximo 2 por vez, spec 005)
         var item = ItemDaFileira(c, av, m.Nick, aoVivo ? null : Tema.Ok);
         item.ContentDescription = aoVivo ? $"Assistir {m.Nick}" : enviarArquivo != null ? $"Enviar arquivo para {m.Nick}" : $"{m.Nick}, online";
         if (enviarArquivo != null)

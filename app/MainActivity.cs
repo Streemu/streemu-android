@@ -115,6 +115,7 @@ public partial class MainActivity : Android.App.Activity
     protected override void OnStop()
     {
         _visivel = false;
+        Streemu.Proto.Avatares.RelogioDeAvatar.ParaTudo();   // avatar de GIF não anima com o app no fundo
         Sessao.Mudou -= MarcarRedesenho;
         ServicoTransmissao.Mudou -= MarcarRedesenho;
         _miniaturas?.Dispose(); _miniaturas = null;

@@ -85,6 +85,7 @@ static class ListaDeAmigos
         var foto = new FrameLayout(c);
         var av = new Avatar(c);
         av.Mostrar(amigo.Id, amigo.Nick, Sessao.Avatar(amigo.Id));
+        av.AnimarAoTocar();   // só se o amigo tem GIF; o resto da linha continua escolhendo o amigo
         foto.AddView(av, new FrameLayout.LayoutParams(Tema.Dp(c, 40), Tema.Dp(c, 40)));
         foto.AddView(new View(c) { Background = Tema.Forma(c, Tema.Ok, 7, Tema.Cartao) }, new FrameLayout.LayoutParams(Tema.Dp(c, 13), Tema.Dp(c, 13), GravityFlags.Bottom | GravityFlags.Right));
         linha.AddView(foto, Tema.Lp(Tema.Dp(c, 40), Tema.Dp(c, 40)));

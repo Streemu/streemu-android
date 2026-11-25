@@ -4,10 +4,11 @@ frases curtas, sem causa técnica e sem nome de pessoa (o arquivo vai para o rep
 PR comum só acrescenta itens em "## Não lançado" (no topo, antes da última versão); quem lança renomeia a seção para a versão.
 -->
 
-## Não lançado
+## 0.1.25 — 2026-11-25
 Enviar arquivos para os amigos e o Cinema no celular mais firme.
 
 ### Novo
+- **Foto e GIF de avatar:** em Mais, toque na sua foto e escolha **Escolher foto ou GIF**. A imagem fica redonda, pelo centro, e seus amigos a veem em poucos segundos, no celular e no PC. GIFs animados funcionam de qualquer tamanho. Para voltar à inicial colorida, use **Remover foto**. O GIF dos amigos online mexe sozinho no Início (até 2 por vez) e, na lista de amigos do envio de arquivo, quando você toca nele.
 - **Modo claro:** em Mais, em "Aparência", toque no botão sol/lua para trocar entre o tema escuro e o claro, o mesmo do Streemu no PC. Ligue "Automático" para o app seguir o tema do celular. O player das lives e o Cinema continuam escuros, porque ficam sobre o vídeo.
 - **Avisos por cima da tela:** quando um amigo do seu grupo abre uma live, o celular mostra um aviso na hora, como qualquer app. Pedidos de arquivo também aparecem por cima, com Aceitar e Recusar, sem precisar abrir o Streemu. Funciona com o app fechado (fica um aviso fixo discreto "Streemu conectado") e dá para desligar em Mais, em "Avisos de lives e arquivos".
 - **Enviar arquivo:** na aba Arquivos, escolha um amigo que está online, escolha fotos, vídeos ou documentos e envie direto do seu celular. Quem recebe aceita, o arquivo chega conferido na pasta Downloads/Streemu e, se a conexão cair, continua de onde parou.

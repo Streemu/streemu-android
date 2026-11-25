@@ -14,7 +14,7 @@ static partial class Telas
     // ================================================================================================ Mais
 
     /// <summary>Monta a aba Mais. Ex.: <c>Telas.Mais(this, TrocarApelido, ConfirmarSaida, AbrirNovidades)</c></summary>
-    public static ScrollView Mais(Context c, Action trocarApelido, Action sair, Action abrirNovidades)
+    public static ScrollView Mais(Context c, Action trocarApelido, Action sair, Action abrirNovidades, Action abrirMenuDoAvatar)
     {
         var col = Tema.Coluna(c);
         int m = Margem(c);
@@ -25,7 +25,7 @@ static partial class Telas
         envelope.AddView(col, new LinearLayout.LayoutParams(Math.Min(Tema.Dp(c, 640), c.Resources!.DisplayMetrics!.WidthPixels), Tema.Ajusta));
         col.AddView(TituloDaTela(c, "Mais"));
         col.AddView(TituloDeSecao(c, "Você"));
-        col.AddView(CartaoDoNome(c, trocarApelido));
+        col.AddView(CartaoDoNome(c, trocarApelido, abrirMenuDoAvatar));
         col.AddView(TituloDeSecao(c, "Aparência"));
         col.AddView(CartaoDaAparencia(c));
         col.AddView(TituloDeSecao(c, "Diagnóstico"));
@@ -40,7 +40,7 @@ static partial class Telas
         return Rolagem(c, envelope);
     }
 
-    static View CartaoDoNome(Context c, Action trocarApelido)
+    static View CartaoDoNome(Context c, Action trocarApelido, Action abrirMenuDoAvatar)
     {
         var cartao = Cartao(c);
         var linha = Tema.Linha(c);
@@ -51,11 +51,14 @@ static partial class Telas
         var av = new Avatar(c);
         string conta = Sessao.Conta.ContaId ?? "eu";
         av.Mostrar(conta, Sessao.Apelido, Sessao.Avatar(conta));
+        av.AnimarSozinho();   // o meu GIF mexe sozinho aqui, para eu ver como os amigos o veem
+        av.ContentDescription = "Sua foto de perfil. Toque para trocar";
+        av.Click += (_, _) => abrirMenuDoAvatar();   // clicável de propósito: o toque na foto não chega à linha (que troca o nome)
         linha.AddView(av, Tema.Lp(Tema.Dp(c, 52), Tema.Dp(c, 52)));
         var textos = Tema.Coluna(c);
         textos.SetPadding(Tema.Dp(c, 14), 0, Tema.Dp(c, 8), 0);
         textos.AddView(Tema.Texto(c, Sessao.Apelido, 18, negrito: true));
-        textos.AddView(Tema.Texto(c, "Seu nome em todos os aparelhos · toque para mudar", 14, Tema.TextoApagado));
+        textos.AddView(Tema.Texto(c, "Toque para mudar o nome · na foto, para trocar a imagem", 14, Tema.TextoApagado));
         linha.AddView(textos, Tema.Lp(0, Tema.Ajusta, 1));
         linha.AddView(Tema.Icone(c, Resource.Drawable.ic_seta, Tema.TextoApagado));
         cartao.AddView(linha);

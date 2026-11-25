@@ -1,7 +1,7 @@
 {
-  "versao": "0.1.24",
-  "versionCode": 25,
-  "notas": "- Adiciona o modo claro, com botão sol/lua e opção Automático em Mais",
+  "versao": "0.1.25",
+  "versionCode": 26,
+  "notas": "- Adiciona foto e GIF de avatar no celular",
   "obrigatoria": false,
-  "privado": "6504cd24847689a0a5291a16193dfba9bc66ff26"
+  "privado": "f07f4815c3e75a1629d5a8eb33f325dccf43520e"
 }

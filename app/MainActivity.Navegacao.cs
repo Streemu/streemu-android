@@ -193,6 +193,7 @@ public partial class MainActivity
             ((TextView)item.GetChildAt(1)!).SetTextColor(atual ? Tema.CorTexto : Tema.TextoApagado);
             item.Selected = atual;
         }
+        if (_telaAtual != null && _abaDaTela != _aba) Streemu.Proto.Avatares.RelogioDeAvatar.ParaTudo();   // trocou de aba: o GIF da aba anterior não anima escondido
         // a rolagem só fica na mesma tela: mesma aba e mesma subtela (abrir Novidades com Mais rolada abria Novidades no meio)
         int rolagem = _telaAtual != null && _abaDaTela == _aba && _subtelaDaTela == _subtela ? _telaAtual.ScrollY : 0;
         _conteudo.RemoveAllViews();
@@ -208,7 +209,7 @@ public partial class MainActivity
             Aba.Cinema => Telas.Cinema(this, TenhoOArquivo, BaixarOFilme, AssistirBaixado, a => Filme.BaixarFilme.Parar(Streemu.Util.JsonSeguro.Texto(a["filme"]) ?? ""), AssistirPelaTransmissao, CriarSessao),
             Aba.Arquivos when EnvioArquivos.EnvioDeArquivos.Liberado => Telas.Arquivos(this, _estadoArquivos, AcoesArquivos(), EnvioArquivos.EnvioDeArquivos.Fluxo, AmigosOnline()),
             Aba.Arquivos => Telas.EmBreve(this, Resource.Drawable.mumu_dormindo, "Arquivos em breve", "Enviar fotos, vídeos e documentos direto para um amigo."),
-            _ => Telas.Mais(this, TrocarApelido, ConfirmarSaida, () => AbrirSubtela(Subtela.Novidades)),
+            _ => Telas.Mais(this, TrocarApelido, ConfirmarSaida, () => AbrirSubtela(Subtela.Novidades), MenuDoAvatar),
         };
         _abaDaTela = _aba;
         _subtelaDaTela = _subtela;
