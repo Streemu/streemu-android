@@ -100,16 +100,14 @@ public partial class MainActivity
         if (Sessao.Conta.Grupos.FirstOrDefault(g => g.Id == Sessao.GrupoId) is { } grupo) Convites.Convidar(this, grupo);
     }
 
+    /// <summary>A folha "Trocar de grupo": um item por grupo da conta, com o visto no aberto. A âncora vem da tela e não é mais usada (a folha sobe de baixo).</summary>
     void EscolherGrupo(View ancora)
     {
         if (Atualizacao.BloqueiaSala) { MostrarAtualizacao(); return; }
         var gs = Sessao.Conta.Grupos;
         if (gs.Count == 0) return;
-        var menu = new PopupMenu(this, ancora);
-        for (int i = 0; i < gs.Count; i++) menu.Menu!.Add(0, i, i, gs[i].Nome)!.SetCheckable(true)!.SetChecked(gs[i].Id == Sessao.GrupoId);
-        menu.Menu!.SetGroupCheckable(0, true, true);
-        menu.MenuItemClick += (_, e) => Sessao.AbrirSala(gs[e.Item!.ItemId].Id);
-        menu.Show();
+        var acoes = gs.Select(g => new AcaoDaFolha(Resource.Drawable.ic_grupo, g.Nome, () => Sessao.AbrirSala(g.Id), Marcada: g.Id == Sessao.GrupoId)).ToList();
+        FolhaDeAcoes.Mostrar(this, "Trocar de grupo", acoes);
     }
 
     static readonly (Aba Aba, int Icone, string Nome)[] ItensDaNavegacao =
@@ -266,11 +264,7 @@ public partial class MainActivity
 
     void ConfirmarSaida()
     {
-        new Android.App.AlertDialog.Builder(this, Tema.EstiloDoDialogo)!
-            .SetTitle("Sair da conta?")!
-            .SetMessage("Este celular deixa de ser um dispositivo da sua conta Streemu. Para voltar, é só entrar de novo.")!
-            .SetPositiveButton("Sair", (_, _) => _ = Sessao.SairDaContaAsync())!
-            .SetNegativeButton("Cancelar", (_, _) => { })!
-            .Show();
+        CaixaDoApp.Confirmar(this, "Sair da conta?", "Este celular deixa de ser um dispositivo da sua conta Streemu. Para voltar, é só entrar de novo.",
+            "Sair", () => _ = Sessao.SairDaContaAsync(), perigosa: true);
     }
 }

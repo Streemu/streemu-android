@@ -1,3 +1,4 @@
+using Android.App;
 using Android.Content;
 using Android.Views;
 using Android.Widget;
@@ -20,7 +21,7 @@ static class Convites
 
     // estado de tela única: um convite, uma entrada e um diálogo de cada vez
     static bool _entrando, _convidando, _criando, _saindo;
-    static Android.App.AlertDialog? _dialogo;
+    static Dialog? _dialogo;
 
     // ------------------------------------------------------------------ convite pendente (guardado em SharedPreferences "streemu")
 
@@ -79,14 +80,10 @@ static class Convites
             Aviso(a, "Você já está nesse grupo.");
             return;
         }
-        var d = Caixa(a)
-            .SetTitle("Convite para um grupo")!
-            .SetMessage("Você recebeu um convite para entrar num grupo do Streemu.\n\nEntrando, as pessoas do grupo passam a ver quando você está online e ao vivo, e você vê as delas. Só aceite se você conhece quem mandou.")!
-            .SetPositiveButton("Entrar", (_, _) => EntrarPeloConvite(a, codigo))!
-            .SetNegativeButton("Agora não", (_, _) => Recusar(a))!
-            .Create()!;
-        d.CancelEvent += (_, _) => Recusar(a);
-        Mostrar(d);
+        // fechar sem tocar em "Entrar" (Agora não, toque fora, voltar) é recusar
+        Registrar(CaixaDoApp.Confirmar(a, "Convite para um grupo",
+            "Você recebeu um convite para entrar num grupo do Streemu.\n\nEntrando, as pessoas do grupo passam a ver quando você está online e ao vivo, e você vê as delas. Só aceite se você conhece quem mandou.",
+            "Entrar", () => EntrarPeloConvite(a, codigo), rotuloCancelar: "Agora não", aoRecusar: () => Recusar(a)));
     }
 
     static void Recusar(MainActivity a)
@@ -141,32 +138,24 @@ static class Convites
     public static void PedirConvite(MainActivity a)
     {
         if (_dialogo != null) return;
-        var (campo, erro, moldura) = CampoComErro(a, "Cole o link ou o código", 400);
-        var d = Caixa(a)
-            .SetTitle("Entrar com convite")!
-            .SetMessage("Cole o link que você recebeu ou digite o código do convite.")!
-            .SetView(moldura)!
-            .SetPositiveButton("Entrar", (IDialogInterfaceOnClickListener?)null)!
-            .SetNegativeButton("Cancelar", (_, _) => { })!
-            .Create()!;
-        Mostrar(d);
-        var entrar = d.GetButton((int)DialogButtonType.Positive)!;
-        entrar.Click += (_, _) =>
+        Registrar(CaixaDeTexto.Mostrar(a, "Entrar com convite", "Cole o link que você recebeu ou digite o código do convite.", "", 400,
+            texto => EntrarComTexto(a, texto), () => { }, rotuloSalvar: "Entrar", rotuloOcupado: "Entrando...", dica: "Cole o link ou o código", semSugestoes: true));
+    }
+
+    /// <summary>O "Entrar" da caixa: devolve null se entrou (a caixa fecha) ou a frase de erro (a caixa fica aberta com o que foi digitado).</summary>
+    static Task<string?> EntrarComTexto(MainActivity a, string texto)
+    {
+        if (ContaLeve.NormalizarConvite(texto) is not { } codigo)
+            return Task.FromResult<string?>("Esse convite não está completo. Confira o link ou o código.");
+        var fim = new TaskCompletionSource<string?>();
+        EntrarNoGrupo(a, codigo, r =>
         {
-            if (ContaLeve.NormalizarConvite(campo.Text) is not { } codigo) { erro.Text = "Esse convite não está completo. Confira o link ou o código."; erro.Visibility = ViewStates.Visible; return; }
-            erro.Visibility = ViewStates.Gone;
-            entrar.Enabled = false;
-            entrar.Text = "Entrando...";
-            EntrarNoGrupo(a, codigo, r =>
-            {
-                if (r.Ok) { Limpar(a); d.Dismiss(); AposEntrar(a, r); return; }
-                entrar.Enabled = true;
-                entrar.Text = "Entrar";
-                erro.Text = r.Texto ?? "Não deu certo. Tente de novo em instantes.";
-                erro.Visibility = ViewStates.Visible;
-            });
-        };
-        campo.RequestFocus();
+            if (!r.Ok) { fim.SetResult(r.Texto ?? "Não deu certo. Tente de novo em instantes."); return; }
+            Limpar(a);
+            fim.SetResult(null);
+            AposEntrar(a, r);
+        });
+        return fim.Task;
     }
 
     // ------------------------------------------------------------------ Criar grupo
@@ -174,60 +163,39 @@ static class Convites
     public static void PedirCriacao(MainActivity a)
     {
         if (_dialogo != null) return;
-        var (campo, erro, moldura) = CampoComErro(a, "Nome do grupo", 40);
-        var d = Caixa(a)
-            .SetTitle("Criar grupo")!
-            .SetMessage("Depois de criar, você recebe o link para chamar o pessoal.")!
-            .SetView(moldura)!
-            .SetPositiveButton("Criar", (IDialogInterfaceOnClickListener?)null)!
-            .SetNegativeButton("Cancelar", (_, _) => { })!
-            .Create()!;
-        Mostrar(d);
-        var criar = d.GetButton((int)DialogButtonType.Positive)!;
-        criar.Click += (_, _) =>
+        Registrar(CaixaDeTexto.Mostrar(a, "Criar grupo", "Depois de criar, você recebe o link para chamar o pessoal.", "", 40,
+            nome => CriarGrupo(a, nome), () => { }, rotuloSalvar: "Criar", rotuloOcupado: "Criando...", dica: "Nome do grupo"));
+    }
+
+    /// <summary>O "Criar" da caixa: devolve null se criou (a caixa fecha e o link do convite aparece) ou a frase de erro (a caixa fica aberta).</summary>
+    static async Task<string?> CriarGrupo(MainActivity a, string digitado)
+    {
+        var nome = digitado.Trim();
+        if (nome.Length == 0) return "Dê um nome ao grupo.";
+        if (_criando) return "Já estou criando um grupo. Espere um instante.";
+        _criando = true;
+        var apelido = Sessao.Apelido;
+        ResultadoGrupo r;
+        string? site = null;
+        try
         {
-            if (_criando) return;
-            var nome = campo.Text?.Trim() ?? "";
-            if (nome.Length == 0) { erro.Text = "Dê um nome ao grupo."; erro.Visibility = ViewStates.Visible; return; }
-            erro.Visibility = ViewStates.Gone;
-            _criando = true;
-            criar.Enabled = false;
-            criar.Text = "Criando...";
-            var apelido = Sessao.Apelido;
-            _ = Task.Run(async () =>
-            {
-                ResultadoGrupo r;
-                string? site = null;
-                try
-                {
-                    r = await Sessao.Conta.CriarGrupoAsync(nome, apelido);
-                    if (r.Ok) site = await Sessao.Conta.SiteAsync();
-                }
-                catch (Exception e) { Logcat.Warn("Streemu", "criar grupo: " + e.GetType().Name); r = new(false, "erro", "Não deu certo. Tente de novo em instantes."); }
-                a.RunOnUiThread(() =>
-                {
-                    _criando = false;
-                    try
-                    {
-                        Sessao.Avisar();
-                        if (!r.Ok)
-                        {
-                            criar.Enabled = true;
-                            criar.Text = "Criar";
-                            erro.Text = r.Texto ?? "Não deu certo. Tente de novo em instantes.";
-                            erro.Visibility = ViewStates.Visible;
-                            return;
-                        }
-                        d.Dismiss();
-                        if (r.Id != null) Sessao.AbrirSala(r.Id);
-                        if (r.Convite != null && site != null) MostrarConvite(a, "Grupo criado", r.Nome ?? nome, ContaLeve.LinkDoConvite(site, r.Convite));
-                        else Aviso(a, $"Grupo {r.Nome ?? nome} criado. Toque em Convidar para pegar o link.", longo: true);
-                    }
-                    catch (Exception e) { Logcat.Warn("Streemu", "criar grupo (tela): " + e.GetType().Name); }
-                });
-            });
-        };
-        campo.RequestFocus();
+            r = await Task.Run(() => Sessao.Conta.CriarGrupoAsync(nome, apelido));
+            if (r.Ok) site = await Task.Run(() => Sessao.Conta.SiteAsync());
+        }
+        catch (Exception e) { Logcat.Warn("Streemu", "criar grupo: " + e.GetType().Name); r = new(false, "erro", "Não deu certo. Tente de novo em instantes."); }
+        _criando = false;
+        Sessao.Avisar();
+        if (!r.Ok) return r.Texto ?? "Não deu certo. Tente de novo em instantes.";
+        if (r.Id != null) Sessao.AbrirSala(r.Id);
+        // a caixa de criar fecha assim que esta função devolve null; o link do convite abre logo depois, numa mensagem nova da tela
+        a.Window!.DecorView.Post(() => { _dialogo = null; MostrarConviteDoGrupoCriado(a, r, nome, site); });
+        return null;
+    }
+
+    static void MostrarConviteDoGrupoCriado(MainActivity a, ResultadoGrupo r, string nome, string? site)
+    {
+        if (r.Convite != null && site != null) MostrarConvite(a, "Grupo criado", r.Nome ?? nome, ContaLeve.LinkDoConvite(site, r.Convite));
+        else Aviso(a, $"Grupo {r.Nome ?? nome} criado. Toque em Convidar para pegar o link.", longo: true);
     }
 
     // ------------------------------------------------------------------ Convidar: link para compartilhar ou copiar
@@ -265,14 +233,13 @@ static class Convites
     static void MostrarConvite(MainActivity a, string titulo, string nome, string link)
     {
         if (_dialogo != null) return;
-        var d = Caixa(a)
-            .SetTitle(titulo)!
-            .SetMessage($"Quem abrir este link entra no grupo {nome}. Mande só para quem você conhece.\n\n{link}")!
-            .SetPositiveButton("Compartilhar", (_, _) => Compartilhar(a, nome, link))!
-            .SetNeutralButton("Copiar", (_, _) => Copiar(a, link))!
-            .SetNegativeButton("Fechar", (_, _) => { })!
-            .Create()!;
-        Mostrar(d);
+        var botoes = new[]
+        {
+            new BotaoDaCaixa("Compartilhar", () => Compartilhar(a, nome, link), Principal: true),
+            new BotaoDaCaixa("Copiar", () => Copiar(a, link)),
+            new BotaoDaCaixa("Fechar"),
+        };
+        Registrar(CaixaDoApp.Mostrar(a, titulo, $"Quem abrir este link entra no grupo {nome}. Mande só para quem você conhece.\n\n{link}", botoes, selecionavel: true));
     }
 
     static void Compartilhar(MainActivity a, string nome, string link)
@@ -307,13 +274,9 @@ static class Convites
     public static void ConfirmarSaidaDoGrupo(MainActivity a, GrupoDaConta g)
     {
         if (_dialogo != null) return;
-        var d = Caixa(a)
-            .SetTitle($"Sair do grupo {g.Nome}?")!
-            .SetMessage("Você deixa de ver as pessoas do grupo e elas deixam de ver você. Para voltar, vai precisar de um convite.")!
-            .SetPositiveButton("Sair", (_, _) => Sair(a, g))!
-            .SetNegativeButton("Cancelar", (_, _) => { })!
-            .Create()!;
-        Mostrar(d);
+        Registrar(CaixaDoApp.Confirmar(a, $"Sair do grupo {g.Nome}?",
+            "Você deixa de ver as pessoas do grupo e elas deixam de ver você. Para voltar, vai precisar de um convite.",
+            "Sair", () => Sair(a, g), perigosa: true));
     }
 
     static void Sair(MainActivity a, GrupoDaConta g)
@@ -342,31 +305,11 @@ static class Convites
 
     // ------------------------------------------------------------------ peças de diálogo
 
-    static Android.App.AlertDialog.Builder Caixa(Context c) => new Android.App.AlertDialog.Builder(c, Tema.EstiloDoDialogo)!;
-
-    /// <summary>Mostra e guarda o diálogo: só um por vez, e a tela o fecha ao ser destruída.</summary>
-    static void Mostrar(Android.App.AlertDialog d)
+    /// <summary>Guarda o diálogo que acabou de abrir: só um por vez, e a tela o fecha ao ser destruída (<see cref="Fechar"/>).</summary>
+    static void Registrar(Dialog d)
     {
         _dialogo = d;
         d.DismissEvent += (_, _) => { if (ReferenceEquals(_dialogo, d)) _dialogo = null; };
-        d.Show();
-    }
-
-    /// <summary>Campo de uma linha com uma linha de erro escondida embaixo, para o erro aparecer sem fechar o diálogo.</summary>
-    static (EditText Campo, TextView Erro, View Moldura) CampoComErro(Context c, string dica, int maximo)
-    {
-        var campo = new EditText(c) { Hint = dica };
-        campo.SetFilters(new Android.Text.IInputFilter[] { new Android.Text.InputFilterLengthFilter(maximo) });
-        campo.SetSingleLine(true);
-        campo.InputType = Android.Text.InputTypes.ClassText | Android.Text.InputTypes.TextFlagNoSuggestions;
-        var erro = Tema.Texto(c, "", 14, Tema.Erro);
-        erro.Visibility = ViewStates.Gone;
-        erro.SetPadding(0, Tema.Dp(c, 6), 0, 0);
-        var coluna = Tema.Coluna(c);
-        coluna.SetPadding(Tema.Dp(c, 22), Tema.Dp(c, 8), Tema.Dp(c, 22), 0);
-        coluna.AddView(campo, Tema.Lp(Tema.Cheio, Tema.Ajusta));
-        coluna.AddView(erro, Tema.Lp(Tema.Cheio, Tema.Ajusta));
-        return (campo, erro, coluna);
     }
 
     static void Aviso(Context c, string texto, bool longo = false) =>

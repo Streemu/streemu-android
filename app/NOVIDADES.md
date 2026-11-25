@@ -4,6 +4,12 @@ frases curtas, sem causa técnica e sem nome de pessoa (o arquivo vai para o rep
 PR comum só acrescenta itens em "## Não lançado" (no topo, antes da última versão); quem lança renomeia a seção para a versão.
 -->
 
+## 0.1.27 — 2026-11-25
+Mais caixas e menus com a cara do Streemu.
+
+### Melhorias
+- **Caixas e menus no visual do Streemu:** sair da conta, sair de um grupo, entrar com convite, criar grupo, o convite recebido e o link para chamar o pessoal agora seguem o visual do Streemu, nos temas claro e escuro. O menu de trocar de grupo e o de opções do grupo também.
+
 ## 0.1.26 — 2026-11-25
 A caixa de trocar o nome ficou com a cara do Streemu.
 

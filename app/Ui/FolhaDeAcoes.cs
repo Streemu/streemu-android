@@ -7,8 +7,8 @@ using Android.Widget;
 
 namespace Streemu.Proto.Ui;
 
-/// <summary>Uma linha da <see cref="FolhaDeAcoes"/>: ícone, texto e o que fazer. <see cref="Perigosa"/> pinta de vermelho (remover, sair).</summary>
-sealed record AcaoDaFolha(int Icone, string Texto, Action Executar, bool Perigosa = false);
+/// <summary>Uma linha da <see cref="FolhaDeAcoes"/>: ícone, texto e o que fazer. <see cref="Perigosa"/> pinta de vermelho (remover, sair); <see cref="Marcada"/> põe o visto (a escolha de agora).</summary>
+sealed record AcaoDaFolha(int Icone, string Texto, Action Executar, bool Perigosa = false, bool Marcada = false);
 
 /// <summary>
 /// O menu de ações do app: uma folha que sobe da borda de baixo, nas cores do tema (claro e escuro), no lugar do PopupMenu do Android, que sai com a cara do
@@ -42,8 +42,21 @@ static class FolhaDeAcoes
         var cabecalho = Tema.Texto(tela, titulo, 15, Tema.TextoApagado, negrito: true);
         cabecalho.SetPadding(Tema.Dp(tela, 20), Tema.Dp(tela, 14), Tema.Dp(tela, 20), Tema.Dp(tela, 6));
         folha.AddView(cabecalho);
-        foreach (var acao in acoes) folha.AddView(Linha(tela, acao, fechar));
+        var lista = Tema.Coluna(tela);
+        foreach (var acao in acoes) lista.AddView(Linha(tela, acao, fechar));
+        var rolagem = new RolagemLimitada(tela, (int)(tela.Resources!.DisplayMetrics!.HeightPixels * 0.6));   // muitos itens (grupos) rolam em vez de cobrir a tela
+        rolagem.AddView(lista);
+        folha.AddView(rolagem);
         return folha;
+    }
+
+    /// <summary>ScrollView que cresce com o conteúdo até um teto de altura.</summary>
+    sealed class RolagemLimitada : ScrollView
+    {
+        readonly int _maximo;
+        public RolagemLimitada(Context c, int maximoPx) : base(c) { _maximo = maximoPx; OverScrollMode = OverScrollMode.Never; }
+        protected override void OnMeasure(int larguraSpec, int alturaSpec) =>
+            base.OnMeasure(larguraSpec, MeasureSpec.MakeMeasureSpec(Math.Min(MeasureSpec.GetSize(alturaSpec), _maximo), MeasureSpecMode.AtMost));
     }
 
     /// <summary>Cartão com os cantos de cima redondos e o fio da borda: a mesma pele dos cartões do app, colada embaixo.</summary>
@@ -72,6 +85,7 @@ static class FolhaDeAcoes
         var texto = Tema.Texto(tela, acao.Texto, 16, cor);
         texto.SetPadding(Tema.Dp(tela, 16), 0, 0, 0);
         linha.AddView(texto, Tema.Lp(0, Tema.Ajusta, 1));
+        if (acao.Marcada) linha.AddView(Tema.Icone(tela, Resource.Drawable.ic_check, Tema.DestaqueSuave));
         return linha;
     }
 

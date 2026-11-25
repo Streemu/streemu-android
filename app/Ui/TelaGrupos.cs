@@ -127,11 +127,12 @@ static partial class Telas
         b.AddView(Tema.Icone(c, Resource.Drawable.ic_mais, Tema.TextoApagado), new FrameLayout.LayoutParams(Tema.Dp(c, 24), Tema.Dp(c, 24), GravityFlags.Center));
         b.Click += (_, _) =>
         {
-            var menu = new PopupMenu(c, b);
-            menu.Menu!.Add(0, 0, 0, "Convidar");
-            menu.Menu!.Add(0, 1, 1, "Sair do grupo");
-            menu.MenuItemClick += (_, e) => { if (e.Item!.ItemId == 0) convidar(g); else sairDoGrupo(g); };
-            menu.Show();
+            if (c is not Activity tela) return;
+            FolhaDeAcoes.Mostrar(tela, g.Nome, new[]
+            {
+                new AcaoDaFolha(Resource.Drawable.ic_criar_grupo, "Convidar", () => convidar(g)),
+                new AcaoDaFolha(Resource.Drawable.ic_sair, "Sair do grupo", () => sairDoGrupo(g), Perigosa: true),
+            });
         };
         return b;
     }

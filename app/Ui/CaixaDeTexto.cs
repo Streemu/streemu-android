@@ -10,72 +10,50 @@ using Android.Widget;
 namespace Streemu.Proto.Ui;
 
 /// <summary>
-/// Pede uma linha de texto numa caixa no visual do app (cartão da <see cref="Paleta"/>, campo com a borda do tema, botões Cancelar e Salvar do app), no lugar do
-/// AlertDialog do Android, que sai com a cara do sistema. Vale para o tema claro e o escuro. A caixa fica aberta com o texto digitado enquanto salvar der erro
+/// Pede uma linha de texto numa caixa no visual do app (o cartão da <see cref="CaixaDoApp"/>, campo com a borda do tema, botões Cancelar e Salvar do app), no lugar
+/// do AlertDialog do Android, que sai com a cara do sistema. Vale para o tema claro e o escuro. A caixa fica aberta com o texto digitado enquanto salvar der erro
 /// ou estiver sem rede. Tem de ser chamada da thread da tela.
 /// Uso: <c>CaixaDeTexto.Mostrar(this, "Mudar nome", "É como os amigos veem você.", "Seu nome", 24, SalvarNome, () =&gt; _aberta = false);</c>
 /// </summary>
 static class CaixaDeTexto
 {
-    const int LarguraMaximaDp = 380;
-
     /// <param name="aoSalvar">Recebe o texto e devolve null se deu certo (a caixa fecha) ou a frase de erro (a caixa fica aberta e mostra a frase).</param>
-    public static void Mostrar(Activity tela, string titulo, string explicacao, string inicial, int maximo, Func<string, Task<string?>> aoSalvar, Action aoFechar)
+    /// <param name="rotuloSalvar">O texto do botão que confirma ("Salvar", "Entrar", "Criar"); <paramref name="rotuloOcupado"/> aparece nele enquanto espera.</param>
+    /// <param name="dica">Texto cinza do campo vazio (ex.: "Cole o link ou o código").</param>
+    /// <param name="semSugestoes">Sem sugestões do teclado, para códigos e links.</param>
+    public static Dialog Mostrar(Activity tela, string titulo, string explicacao, string inicial, int maximo, Func<string, Task<string?>> aoSalvar, Action aoFechar,
+        string rotuloSalvar = "Salvar", string rotuloOcupado = "Salvando...", string? dica = null, bool semSugestoes = false)
     {
         var dialogo = new Dialog(tela);
         dialogo.RequestWindowFeature((int)WindowFeatures.NoTitle);
-        var campo = Campo(tela, inicial, maximo);
+        var campo = Campo(tela, inicial, maximo, dica, semSugestoes);
         var erro = Tema.Texto(tela, "", 14, Tema.Erro);
         erro.Visibility = ViewStates.Gone;
+        erro.SetPadding(Tema.Dp(tela, 4), Tema.Dp(tela, 8), 0, 0);
         var cancelar = Tema.Botao(tela, "Cancelar", principal: false);
-        var salvar = Tema.Botao(tela, "Salvar");
-        salvar.Click += async (_, _) => await Salvar(dialogo, campo, erro, salvar, aoSalvar);
+        var salvar = Tema.Botao(tela, rotuloSalvar);
+        salvar.Click += async (_, _) => await Salvar(dialogo, campo, erro, salvar, aoSalvar, rotuloSalvar, rotuloOcupado);
         cancelar.Click += (_, _) => dialogo.Dismiss();
         campo.EditorAction += (_, e) => { if (e.ActionId == ImeAction.Done) salvar.PerformClick(); };
-        dialogo.SetContentView(Montar(tela, titulo, explicacao, campo, erro, cancelar, salvar));
-        dialogo.DismissEvent += (_, _) => aoFechar();
-        Exibir(tela, dialogo, campo);
-    }
-
-    static void Exibir(Activity tela, Dialog dialogo, EditText campo)
-    {
-        var janela = dialogo.Window!;
-        janela.SetBackgroundDrawable(new ColorDrawable(Color.Transparent));
-        janela.SetSoftInputMode(SoftInput.StateAlwaysVisible | SoftInput.AdjustResize);
-        janela.SetLayout(Math.Min(Tema.Dp(tela, LarguraMaximaDp), tela.Resources!.DisplayMetrics!.WidthPixels - Tema.Dp(tela, 32)), ViewGroup.LayoutParams.WrapContent);
-        dialogo.SetCanceledOnTouchOutside(true);
-        dialogo.Show();
-        campo.RequestFocus();
-    }
-
-    static View Montar(Activity tela, string titulo, string explicacao, View campo, View erro, View cancelar, View salvar)
-    {
-        var cartao = Tema.Coluna(tela);
-        cartao.Background = Tema.Forma(tela, Tema.Cartao, 20, Tema.Borda);
-        cartao.SetPadding(Tema.Dp(tela, 22), Tema.Dp(tela, 22), Tema.Dp(tela, 22), Tema.Dp(tela, 20));
-        cartao.AddView(Tema.Texto(tela, titulo, 20, negrito: true));
-        var texto = Tema.Texto(tela, explicacao, 14, Tema.TextoApagado);
-        texto.SetPadding(0, Tema.Dp(tela, 6), 0, Tema.Dp(tela, 16));
-        cartao.AddView(texto);
-        cartao.AddView(campo);
-        erro.SetPadding(Tema.Dp(tela, 4), Tema.Dp(tela, 8), 0, 0);
+        var cartao = CaixaDoApp.Cartao(tela, titulo, explicacao);
+        cartao.AddView(campo, CaixaDoApp.MargemDeCima(tela, 16));
         cartao.AddView(erro);
-        var botoes = Tema.Linha(tela);
-        botoes.AddView(cancelar, Tema.Lp(0, Tema.Ajusta, 1));
-        botoes.AddView(new View(tela), Tema.Lp(Tema.Dp(tela, 12), 1));
-        botoes.AddView(salvar, Tema.Lp(0, Tema.Ajusta, 1));
-        var linha = Tema.Lp(Tema.Cheio, Tema.Ajusta);
-        linha.TopMargin = Tema.Dp(tela, 20);
-        cartao.AddView(botoes, linha);
-        return cartao;
+        cartao.AddView(CaixaDoApp.LinhaDeBotoes(tela, new View[] { cancelar, salvar }), CaixaDoApp.MargemDeCima(tela, 20));
+        dialogo.SetContentView(cartao);
+        dialogo.DismissEvent += (_, _) => aoFechar();
+        CaixaDoApp.Exibir(tela, dialogo, teclado: true);
+        campo.RequestFocus();
+        return dialogo;
     }
 
     /// <summary>O campo na pele do app: fundo e borda do tema (a borda ganha a cor de destaque com o foco), texto, dica, cursor e seleção nas cores do tema.</summary>
-    static EditText Campo(Context c, string inicial, int maximo)
+    static EditText Campo(Context c, string inicial, int maximo, string? dica, bool semSugestoes)
     {
         var campo = new EditText(c) { Text = inicial };
+        if (dica != null) campo.Hint = dica;
         campo.SetFilters(new IInputFilter[] { new InputFilterLengthFilter(maximo) });
         campo.SetSingleLine(true);
+        if (semSugestoes) campo.InputType = InputTypes.ClassText | InputTypes.TextFlagNoSuggestions;
         campo.SetSelectAllOnFocus(true);
         campo.ImeOptions = ImeAction.Done;
         campo.SetTextColor(Tema.CorTexto);
@@ -106,14 +84,17 @@ static class CaixaDeTexto
         return cursor;
     }
 
-    static async Task Salvar(Dialog dialogo, EditText campo, TextView erro, View salvar, Func<string, Task<string?>> aoSalvar)
+    static async Task Salvar(Dialog dialogo, EditText campo, TextView erro, TextView salvar, Func<string, Task<string?>> aoSalvar, string rotulo, string rotuloOcupado)
     {
+        if (!salvar.Enabled) return;   // o botão do teclado e o da caixa não salvam duas vezes
         salvar.Enabled = false;
         salvar.Alpha = 0.6f;
+        salvar.Text = rotuloOcupado;
         string? aviso = await aoSalvar(campo.Text ?? "");
         if (aviso == null) { dialogo.Dismiss(); return; }
         salvar.Enabled = true;
         salvar.Alpha = 1f;
+        salvar.Text = rotulo;
         erro.Text = aviso;
         erro.Visibility = ViewStates.Visible;
     }
