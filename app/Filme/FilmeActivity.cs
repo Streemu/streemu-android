@@ -35,7 +35,7 @@ namespace Streemu.Proto.Filme;
 /// </summary>
 [Activity(Label = "Cinema", Exported = false, Theme = "@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen", ScreenOrientation = ScreenOrientation.Landscape,
           ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize | ConfigChanges.KeyboardHidden)]
-public class FilmeActivity : Android.App.Activity
+public class FilmeActivity : Android.App.Activity, Ui.IFixoEscuro
 {
     // anfitrião (F4)
     static FilmeActivity? _anfAtual;
@@ -129,8 +129,8 @@ public class FilmeActivity : Android.App.Activity
         _tocar.Click += (_, _) => { if (_sessao is { } s) { if (s.Tocando) s.Pausar(); else s.Tocar(); } };
         _barra.AddView(_tocar, Tema.Lp(Tema.Ajusta, Tema.Ajusta));
         _linha = new SeekBar(this) { Max = 1000 };
-        _linha.ProgressTintList = Android.Content.Res.ColorStateList.ValueOf(Tema.Destaque);
-        _linha.ThumbTintList = Android.Content.Res.ColorStateList.ValueOf(Tema.DestaqueSuave);
+        _linha.ProgressTintList = Android.Content.Res.ColorStateList.ValueOf(Tema.Escuro.Destaque);
+        _linha.ThumbTintList = Android.Content.Res.ColorStateList.ValueOf(Tema.Escuro.DestaqueSuave);
         _linha.StartTrackingTouch += (_, _) => _arrastando = true;
         _linha.StopTrackingTouch += (_, _) =>
         {
@@ -157,7 +157,7 @@ public class FilmeActivity : Android.App.Activity
         _pessoas = Tema.Texto(this, "", 13, Color.White);
         _pessoas.SetPadding(0, Tema.Dp(this, 8), 0, 0);
         _painelAnf.AddView(_pessoas);
-        _franquia = Tema.Texto(this, "", 12, Tema.Erro);
+        _franquia = Tema.Texto(this, "", 12, Tema.Escuro.Erro);
         _franquia.SetPadding(0, Tema.Dp(this, 6), 0, 0);
         _franquia.Visibility = ViewStates.Gone;
         _painelAnf.AddView(_franquia);
@@ -167,9 +167,9 @@ public class FilmeActivity : Android.App.Activity
 
         _espera = Tema.Coluna(this);
         _espera.SetGravity(GravityFlags.Center);
-        _espera.Background = new GradientDrawable(GradientDrawable.Orientation.TopBottom!, new int[] { Tema.Fundo, Tema.Barra });
+        _espera.Background = new GradientDrawable(GradientDrawable.Orientation.TopBottom!, new int[] { Tema.Escuro.Fundo, Tema.Escuro.Barra });
         var mumu = new ImageView(this);
-        mumu.SetImageResource(Resource.Drawable.mumu_pipoca);
+        mumu.SetImageResource(ArteDoTema.Para(this, Resource.Drawable.mumu_pipoca));
         mumu.SetScaleType(ImageView.ScaleType.FitCenter);
         _espera.AddView(mumu, Tema.Lp(Tema.Dp(this, 120), Tema.Dp(this, 90)));
         _estado = Tema.Texto(this, "Conectando...", 18, negrito: true);
@@ -177,9 +177,9 @@ public class FilmeActivity : Android.App.Activity
         _estado.SetPadding(0, Tema.Dp(this, 10), 0, 0);
         _espera.AddView(_estado);
         _giro = new ProgressBar(this) { Indeterminate = true };
-        _giro.IndeterminateTintList = Android.Content.Res.ColorStateList.ValueOf(Tema.Destaque);
+        _giro.IndeterminateTintList = Android.Content.Res.ColorStateList.ValueOf(Tema.Escuro.Destaque);
         _espera.AddView(_giro, Tema.Lp(Tema.Dp(this, 32), Tema.Dp(this, 32)));
-        _detalhe = Tema.Texto(this, _titulo.Length > 0 ? $"{_anfitriaoNome} · {_titulo}" : "", 14, Tema.TextoApagado);
+        _detalhe = Tema.Texto(this, _titulo.Length > 0 ? $"{_anfitriaoNome} · {_titulo}" : "", 14, Tema.Escuro.TextoApagado);
         _detalhe.Gravity = GravityFlags.Center;
         _detalhe.SetPadding(Tema.Dp(this, 24), Tema.Dp(this, 6), Tema.Dp(this, 24), 0);
         _espera.AddView(_detalhe);
@@ -212,7 +212,7 @@ public class FilmeActivity : Android.App.Activity
         {
             if (_fechando) return;
             _espera.Visibility = ViewStates.Visible;
-            _estado.Text = motivo; _estado.SetTextColor(Tema.Erro);
+            _estado.Text = motivo; _estado.SetTextColor(Tema.Escuro.Erro);
             _giro.Visibility = ViewStates.Gone;
             _detalhe.Text = detalhe;
             _voltar.Visibility = ViewStates.Visible;

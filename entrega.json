@@ -1,7 +1,7 @@
 {
-  "versao": "0.1.23",
-  "versionCode": 24,
-  "notas": "- Avisos por cima da tela de lives de amigos e de pedidos de arquivo",
+  "versao": "0.1.24",
+  "versionCode": 25,
+  "notas": "- Adiciona o modo claro, com botão sol/lua e opção Automático em Mais",
   "obrigatoria": false,
-  "privado": "1ea76e0de9daad443852fc7bdb993729cc0109fc"
+  "privado": "6504cd24847689a0a5291a16193dfba9bc66ff26"
 }

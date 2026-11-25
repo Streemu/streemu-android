@@ -42,6 +42,8 @@ public partial class MainActivity : Android.App.Activity
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
+        Tema.Aplicar(this);               // antes do base.OnCreate: o estilo do Android (menus, campos) tem que valer antes de a janela montar
+        SetTheme(Tema.EstiloDaTela);
         base.OnCreate(savedInstanceState);
         Atualizacao.Iniciar(this);
 #if DEBUG
@@ -63,6 +65,7 @@ public partial class MainActivity : Android.App.Activity
         _raiz.SetBackgroundColor(Tema.Fundo);
         Janela.AplicarMargens(_raiz);
         SetContentView(_raiz);
+        Janela.IconesDasBarras(this, Tema.Atual.Claro);   // só depois do SetContentView: antes dele a janela não tem InsetsController (NullPointerException ao abrir)
         Montar();
         _raiz.Post(() => Convites.ProcessarPendente(this));
     }

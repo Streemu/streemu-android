@@ -9,27 +9,40 @@ using Android.Widget;
 namespace Streemu.Proto.Ui;
 
 /// <summary>
-/// A identidade do Streemu no celular: as cores do tema escuro do app Windows (DESIGN.md / Util/Theme.cs, conferidas em 2026-11-21), em dp e com toque de
+/// A identidade do Streemu no celular: as cores dos temas escuro e claro do app Windows (DESIGN.md / Util/ThemePalette.cs; ver <see cref="Paleta"/>), em dp e com toque de
 /// celular (ripple, alvos de 48 dp, cantos maiores). Sem biblioteca Material: só componentes do Android, para o app ficar leve e abrir rápido.
 /// </summary>
 static class Tema
 {
-    public static readonly Color Fundo = Color.ParseColor("#2A2640");      // surface
-    public static readonly Color Cartao = Color.ParseColor("#1E1B2E");     // surface-raised
-    public static readonly Color Campo = Color.ParseColor("#25213A");      // surface-input
-    public static readonly Color Barra = Color.ParseColor("#171523");      // title-bar: barras de navegação
-    public static readonly Color Borda = Color.ParseColor("#4B4463");      // card-border
-    public static readonly Color Fio = Color.Argb(115, 0x4B, 0x44, 0x63);   // card-border a 45%: o fio sob a barra de cima, mais discreto que uma borda
-    public static readonly Color CorTexto = Color.ParseColor("#F4F0FA");
-    public static readonly Color TextoApagado = Color.ParseColor("#C5BADB");
-    public static readonly Color Destaque = Color.ParseColor("#7C62DC");   // accent: a ação principal
-    public static readonly Color DestaqueSuave = Color.ParseColor("#B9A8F4");
-    public static readonly Color Selecionado = Color.ParseColor("#3A3160");
-    public static readonly Color Neutro = Color.ParseColor("#49415F");
-    public static readonly Color Ok = Color.ParseColor("#3DDC6A");
-    public static readonly Color Aviso = Color.ParseColor("#F0B232");
-    public static readonly Color Erro = Color.ParseColor("#E5484D");
-    public static readonly Color AoVivo = Color.ParseColor("#E5484D");     // selo LIVE (o mesmo vermelho do app no PC)
+    public static Paleta Atual => Paleta.Atual;
+    /// <summary>A paleta escura fixa: o player e o filme ficam sobre vídeo e não mudam de tema.</summary>
+    public static Paleta Escuro => Paleta.Escura;
+
+    public static Color Fundo => Atual.Fundo;
+    public static Color Cartao => Atual.Cartao;
+    public static Color Campo => Atual.Campo;
+    public static Color Barra => Atual.Barra;                  // barras de navegação
+    public static Color Borda => Atual.Borda;
+    public static Color Fio => Atual.Fio;
+    public static Color CorTexto => Atual.CorTexto;
+    public static Color TextoApagado => Atual.TextoApagado;
+    public static Color Destaque => Atual.Destaque;            // a ação principal
+    public static Color DestaqueSuave => Atual.DestaqueSuave;
+    public static Color Selecionado => Atual.Selecionado;
+    public static Color Neutro => Atual.Neutro;
+    public static Color Ok => Atual.Ok;
+    public static Color Aviso => Atual.Aviso;
+    public static Color Erro => Atual.Erro;
+    public static Color AoVivo => Atual.AoVivo;                // selo LIVE (o mesmo vermelho do app no PC)
+
+    /// <summary>Lê a escolha do tema e a deixa valendo. Chamar no começo do OnCreate da tela principal, antes de montar qualquer coisa.</summary>
+    public static void Aplicar(Context c) => Paleta.Atual = PreferenciaDeTema.EhClaro(c) ? Paleta.Clara : Paleta.Escura;
+
+    /// <summary>O tema do Android da tela principal: dele vêm as cores do PopupMenu, do campo de texto e do cursor, que não passam pela <see cref="Paleta"/>.</summary>
+    public static int EstiloDaTela => Atual.Claro ? Android.Resource.Style.ThemeDeviceDefaultLightNoActionBar : Android.Resource.Style.ThemeDeviceDefaultNoActionBar;
+
+    /// <summary>O estilo das caixas de aviso (AlertDialog) da tela principal; as do player seguem escuras.</summary>
+    public static int EstiloDoDialogo => Atual.Claro ? Android.Resource.Style.ThemeDeviceDefaultLightDialogAlert : Android.Resource.Style.ThemeDeviceDefaultDialogAlert;
 
     public static int Dp(Context c, float dp) => (int)Math.Round(TypedValue.ApplyDimension(ComplexUnitType.Dip, dp, c.Resources!.DisplayMetrics));
     public static float LarguraDp(Context c) => c.Resources!.Configuration!.ScreenWidthDp;
@@ -45,12 +58,12 @@ static class Tema
 
     /// <summary>Fundo com o ripple do Android por cima (o retorno do toque que o celular espera).</summary>
     public static Drawable Tocavel(Context c, Color cor, float raioDp, Color? borda = null) =>
-        new RippleDrawable(ColorStateList.ValueOf(Color.Argb(60, 255, 255, 255)), Forma(c, cor, raioDp, borda), Forma(c, Color.White, raioDp));
+        new RippleDrawable(ColorStateList.ValueOf(Paleta.De(c).Brilho), Forma(c, cor, raioDp, borda), Forma(c, Color.White, raioDp));
 
     public static TextView Texto(Context c, string t, float sp, Color? cor = null, bool negrito = false)
     {
         var v = new TextView(c) { Text = t };
-        v.SetTextColor(cor ?? CorTexto);
+        v.SetTextColor(cor ?? Paleta.De(c).CorTexto);
         v.SetTextSize(ComplexUnitType.Sp, sp);
         if (negrito) v.SetTypeface(Typeface.Create("sans-serif-medium", TypefaceStyle.Normal), TypefaceStyle.Normal);
         return v;
@@ -59,11 +72,12 @@ static class Tema
     /// <summary>Botão de ação principal (destaque) ou secundário (neutro): 52 dp de altura, texto médio, cantos de 14 dp.</summary>
     public static TextView Botao(Context c, string t, bool principal = true)
     {
-        var b = Texto(c, t, 16, principal ? Color.White : CorTexto, negrito: true);
+        var p = Paleta.De(c);
+        var b = Texto(c, t, 16, principal ? Color.White : p.TextoNeutro, negrito: true);
         b.Gravity = GravityFlags.Center;
         b.SetMinHeight(Dp(c, 52));
         b.SetPadding(Dp(c, 20), 0, Dp(c, 20), 0);
-        b.Background = Tocavel(c, principal ? Destaque : Neutro, 14);
+        b.Background = Tocavel(c, principal ? p.Destaque : p.Neutro, 14);
         b.Clickable = true; b.Focusable = true;
         return b;
     }

@@ -26,6 +26,8 @@ static partial class Telas
         col.AddView(TituloDaTela(c, "Mais"));
         col.AddView(TituloDeSecao(c, "Você"));
         col.AddView(CartaoDoNome(c, trocarApelido));
+        col.AddView(TituloDeSecao(c, "Aparência"));
+        col.AddView(CartaoDaAparencia(c));
         col.AddView(TituloDeSecao(c, "Diagnóstico"));
         col.AddView(CartaoDoDiagnostico(c));
         col.AddView(TituloDeSecao(c, "Avisos"));

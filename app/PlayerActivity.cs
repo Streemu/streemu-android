@@ -18,7 +18,7 @@ namespace Streemu.Proto;
 /// </summary>
 [Activity(Label = NomeApp.Nome, Exported = false, Theme = "@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen", ScreenOrientation = ScreenOrientation.User,
           ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize | ConfigChanges.KeyboardHidden)]
-public partial class PlayerActivity : Android.App.Activity
+public partial class PlayerActivity : Android.App.Activity, Ui.IFixoEscuro
 {
     const int MaximoDePecas = 4;
 

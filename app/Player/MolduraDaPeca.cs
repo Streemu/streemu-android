@@ -41,9 +41,9 @@ sealed class MolduraDaPeca : FrameLayout, ISurfaceHolderCallback
 
         _espera = Tema.Coluna(c);
         _espera.SetGravity(GravityFlags.Center);
-        _espera.Background = new GradientDrawable(GradientDrawable.Orientation.TopBottom!, new int[] { Tema.Fundo, Tema.Barra });
+        _espera.Background = new GradientDrawable(GradientDrawable.Orientation.TopBottom!, new int[] { Tema.Escuro.Fundo, Tema.Escuro.Barra });
         _mumu = new ImageView(c);
-        _mumu.SetImageResource(Resource.Drawable.mumu_pipoca);
+        _mumu.SetImageResource(ArteDoTema.Para(c, Resource.Drawable.mumu_pipoca));
         _mumu.SetScaleType(ImageView.ScaleType.FitCenter);
         // deitado, a altura é pouca (~400 dp num celular): o Mumu encolhe para o aviso e os botões caberem
         int ladoMumu = Math.Clamp((int)(Math.Min(c.Resources!.Configuration!.ScreenHeightDp, c.Resources.Configuration.ScreenWidthDp) * 0.26), 72, 150);
@@ -53,23 +53,23 @@ sealed class MolduraDaPeca : FrameLayout, ISurfaceHolderCallback
         quem.SetPadding(0, Tema.Dp(c, 12), 0, 0);
         _quem = quem;
         _espera.AddView(quem);
-        if (peca.Jogo.Length > 0) { _jogo = Tema.Texto(c, peca.Jogo, 15, Tema.TextoApagado); _jogo.Gravity = GravityFlags.Center; _espera.AddView(_jogo); }
+        if (peca.Jogo.Length > 0) { _jogo = Tema.Texto(c, peca.Jogo, 15, Tema.Escuro.TextoApagado); _jogo.Gravity = GravityFlags.Center; _espera.AddView(_jogo); }
         var linhaEstado = Tema.Linha(c, GravityFlags.Center);
         linhaEstado.SetPadding(0, Tema.Dp(c, 20), 0, 0);
         _linhaEstado = linhaEstado;
         _giro = new ProgressBar(c) { Indeterminate = true };
-        _giro.IndeterminateTintList = Android.Content.Res.ColorStateList.ValueOf(Tema.DestaqueSuave);
+        _giro.IndeterminateTintList = Android.Content.Res.ColorStateList.ValueOf(Tema.Escuro.DestaqueSuave);
         linhaEstado.AddView(_giro, Tema.Lp(Tema.Dp(c, 20), Tema.Dp(c, 20)));
         _estado = Tema.Texto(c, peca.Titulo, 15);
         _estado.SetPadding(Tema.Dp(c, 10), 0, 0, 0);
         linhaEstado.AddView(_estado, Tema.Lp(Tema.Ajusta, Tema.Ajusta));
         _espera.AddView(linhaEstado);
-        _detalhe = Tema.Texto(c, "", 13, Tema.TextoApagado);
+        _detalhe = Tema.Texto(c, "", 13, Tema.Escuro.TextoApagado);
         _detalhe.Gravity = GravityFlags.Center;
         _detalhe.SetMaxWidth(Tema.Dp(c, 420));
         _detalhe.SetPadding(Tema.Dp(c, 24), Tema.Dp(c, 6), Tema.Dp(c, 24), 0);
         _espera.AddView(_detalhe);
-        _aviso = Tema.Texto(c, "", 13, Tema.Aviso);
+        _aviso = Tema.Texto(c, "", 13, Tema.Escuro.Aviso);
         _aviso.Gravity = GravityFlags.Center;
         _aviso.SetMaxWidth(Tema.Dp(c, 440));
         _aviso.SetPadding(Tema.Dp(c, 24), Tema.Dp(c, 10), Tema.Dp(c, 24), 0);
@@ -192,7 +192,7 @@ sealed class MolduraDaPeca : FrameLayout, ISurfaceHolderCallback
     {
         bool tocando = Peca.Fase == FaseDaPeca.Tocando, erro = Peca.Fase == FaseDaPeca.Erro;
         _estado.Text = Peca.Titulo;
-        _estado.SetTextColor(erro ? Tema.Erro : Tema.CorTexto);
+        _estado.SetTextColor(erro ? Tema.Escuro.Erro : Tema.Escuro.CorTexto);
         _giro.Visibility = erro ? ViewStates.Gone : ViewStates.Visible;
         _detalhe.Text = Peca.Detalhe;
         _detalhe.Visibility = _compacta || Peca.Detalhe.Length == 0 ? ViewStates.Gone : ViewStates.Visible;

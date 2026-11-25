@@ -150,7 +150,7 @@ static partial class Telas
         int lado = Math.Clamp((int)(alturaDp * 0.3), 96, 180);
         col.SetPadding(Tema.Dp(c, 24), Tema.Dp(c, alturaDp < 500 ? 8 : 40), Tema.Dp(c, 24), Tema.Dp(c, 24));
         var img = new ImageView(c);
-        img.SetImageResource(imagem);
+        img.SetImageResource(ArteDoTema.Para(c, imagem));
         img.SetScaleType(ImageView.ScaleType.FitCenter);
         col.AddView(img, Tema.Lp(Tema.Dp(c, lado), Tema.Dp(c, lado)));
         var t = Tema.Texto(c, titulo, 20, negrito: true);
@@ -297,9 +297,10 @@ sealed class Chave : View
     protected override void OnDraw(Canvas canvas)
     {
         float w = Width, h = Height, r = h / 2f;
-        _p.Color = _ligada ? Tema.Destaque : Tema.Neutro;
+        var paleta = Tema.Atual;
+        _p.Color = _ligada ? paleta.Destaque : paleta.TrilhoDesligado;
         canvas.DrawRoundRect(0, 0, w, h, r, r, _p);
-        _p.Color = Color.White;
+        _p.Color = _ligada ? paleta.PuxadorLigado : paleta.PuxadorDesligado;
         float folga = h * 0.14f;
         canvas.DrawCircle(_ligada ? w - r : r, r, r - folga, _p);
     }

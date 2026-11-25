@@ -279,7 +279,7 @@ static partial class Telas
     static View MumuNaGaveta(Context c)
     {
         var img = new ImageView(c) { ContentDescription = "O Mumu dormindo numa gaveta de arquivos" };
-        img.SetImageResource(Resource.Drawable.gato_arquivo);
+        img.SetImageResource(ArteDoTema.Para(c, Resource.Drawable.gato_arquivo));
         img.SetScaleType(ImageView.ScaleType.FitCenter);
         img.LayoutParameters = Tema.Lp(Tema.Dp(c, 104), Tema.Dp(c, 104));
         return img;

@@ -119,7 +119,7 @@ static partial class Telas
         k.Background = Tema.Forma(c, Tema.Cartao, 16, Tema.Borda);
         k.SetPadding(Tema.Dp(c, 16), Tema.Dp(c, 16), Tema.Dp(c, 16), Tema.Dp(c, 20));
         var img = new ImageView(c);
-        img.SetImageResource(Resource.Drawable.mumu_dormindo);
+        img.SetImageResource(ArteDoTema.Para(c, Resource.Drawable.mumu_dormindo));
         img.SetScaleType(ImageView.ScaleType.FitCenter);
         k.AddView(img, Tema.Lp(Tema.Dp(c, 128), Tema.Dp(c, 96)));
         var rotulo = Tema.Texto(c, "AO VIVO NO GRUPO", 12, Tema.DestaqueSuave, negrito: true);
@@ -273,7 +273,7 @@ static partial class Telas
         else
         {
             var gato = new ImageView(c) { Alpha = 0.35f };
-            gato.SetImageResource(Resource.Drawable.gato);
+            gato.SetImageResource(ArteDoTema.Para(c, Resource.Drawable.gato));
             quadro.AddView(gato, new FrameLayout.LayoutParams(Tema.Dp(c, 56), Tema.Dp(c, 56), GravityFlags.Center));
         }
         int s = Tema.Dp(c, 10);

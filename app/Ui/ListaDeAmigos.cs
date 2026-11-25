@@ -66,7 +66,7 @@ static class ListaDeAmigos
         faixa.SetBackgroundColor(Tema.Selecionado);
         faixa.SetPadding(Tema.Dp(c, 16), Tema.Dp(c, 10), Tema.Dp(c, 16), Tema.Dp(c, 10));
         var gato = new ImageView(c);
-        gato.SetImageResource(Resource.Drawable.gato);
+        gato.SetImageResource(ArteDoTema.Para(c, Resource.Drawable.gato));
         gato.SetScaleType(ImageView.ScaleType.FitCenter);
         faixa.AddView(gato, Tema.Lp(Tema.Dp(c, 28), Tema.Dp(c, 28)));
         var t = Tema.Texto(c, "Quem vai receber?", 14, Tema.DestaqueSuave, negrito: true);

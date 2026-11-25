@@ -41,7 +41,7 @@ public partial class PlayerActivity
         _barSub.Ellipsize = Android.Text.TextUtils.TruncateAt.End;
         textos.AddView(_barSub);
         _barra.AddView(textos, Tema.Lp(0, Tema.Ajusta, 1));
-        _barra.AddView(Tema.Selo(this, "AO VIVO", Tema.AoVivo));
+        _barra.AddView(Tema.Selo(this, "AO VIVO", Tema.Escuro.AoVivo));
         _barra.Visibility = ViewStates.Gone;
         _raiz.AddView(_barra, new FrameLayout.LayoutParams(Tema.Cheio, Tema.Ajusta, GravityFlags.Top));
 

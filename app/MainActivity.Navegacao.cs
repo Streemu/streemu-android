@@ -64,7 +64,7 @@ public partial class MainActivity
         var barra = Tema.Linha(this);
         barra.SetPadding(Tema.Dp(this, 16), 0, Tema.Dp(this, 8), 0);
         var logo = new ImageView(this) { ContentDescription = "Streemu" };
-        logo.SetImageResource(Resource.Drawable.logo);
+        logo.SetImageResource(ArteDoTema.Para(this, Resource.Drawable.logo));
         logo.SetAdjustViewBounds(true);   // altura fixa, largura pela proporção do logo (800 × 161)
         logo.SetScaleType(ImageView.ScaleType.FitStart);
         barra.AddView(logo, Tema.Lp(Tema.Ajusta, Tema.Dp(this, 30)));
@@ -255,7 +255,7 @@ public partial class MainActivity
         coluna.SetPadding(Tema.Dp(this, 22), Tema.Dp(this, 8), Tema.Dp(this, 22), 0);
         coluna.AddView(campo);
         coluna.AddView(erro);
-        var dialogo = new Android.App.AlertDialog.Builder(this, Android.Resource.Style.ThemeDeviceDefaultDialogAlert)!
+        var dialogo = new Android.App.AlertDialog.Builder(this, Tema.EstiloDoDialogo)!
             .SetTitle(titulo)!
             .SetMessage(texto)!
             .SetView(coluna)!
@@ -284,7 +284,7 @@ public partial class MainActivity
 
     void ConfirmarSaida()
     {
-        new Android.App.AlertDialog.Builder(this, Android.Resource.Style.ThemeDeviceDefaultDialogAlert)!
+        new Android.App.AlertDialog.Builder(this, Tema.EstiloDoDialogo)!
             .SetTitle("Sair da conta?")!
             .SetMessage("Este celular deixa de ser um dispositivo da sua conta Streemu. Para voltar, é só entrar de novo.")!
             .SetPositiveButton("Sair", (_, _) => _ = Sessao.SairDaContaAsync())!

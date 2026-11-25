@@ -342,7 +342,7 @@ static class Convites
 
     // ------------------------------------------------------------------ peças de diálogo
 
-    static Android.App.AlertDialog.Builder Caixa(Context c) => new Android.App.AlertDialog.Builder(c, Android.Resource.Style.ThemeDeviceDefaultDialogAlert)!;
+    static Android.App.AlertDialog.Builder Caixa(Context c) => new Android.App.AlertDialog.Builder(c, Tema.EstiloDoDialogo)!;
 
     /// <summary>Mostra e guarda o diálogo: só um por vez, e a tela o fecha ao ser destruída.</summary>
     static void Mostrar(Android.App.AlertDialog d)
