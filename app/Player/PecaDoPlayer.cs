@@ -122,6 +122,9 @@ sealed partial class PecaDoPlayer
         _dec?.TrocarSurface(surface);
     }
 
+    /// <summary>A tela da peça está sendo destruída (o player está saindo): o que o decodificador lançar daqui em diante não é falha dele.</summary>
+    public void PerderSurface() => _dec?.Saindo();
+
     public void TentarDeNovo() { if (CodigoTeste == null) _ = AssistirAsync(); }
 
     // ================================================================================================ estado

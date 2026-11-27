@@ -1,7 +1,7 @@
 {
-  "versao": "0.1.28",
-  "versionCode": 29,
-  "notas": "- Deixa as caixas de atualização e de arquivos no visual do Streemu",
+  "versao": "0.1.29",
+  "versionCode": 30,
+  "notas": "- Não trata como queda do decodificador a saída da tela do player\n- Corrige a abertura do decodificador no Samsung A11 e fecha a telemetria da live",
   "obrigatoria": false,
-  "privado": "992c989beee0f5bfb07aa749f74ff316bbf7e4dd"
+  "privado": "78a36d74a71feb91441a193820079d08e84d0882"
 }

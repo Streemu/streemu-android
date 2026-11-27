@@ -168,10 +168,29 @@ sealed partial class PecaDoPlayer
         d.Chegou += (pts, us) => { if (Atraso(pts, us) is double ms) _atrasoChegada.Add(ms); };
         d.NaTela += (pts, us) => { Tocando(); if (Atraso(pts, us) is double ms) _atrasoTela.Add(ms); };
         d.NaoAbriu += f => AoNaoAbrir(d, f);
+        d.Caiu += q => AoCair(d, q);
         _demux.Quadro = d.Entregar;
         // o som abre no primeiro pacote de áudio, quando a PMT já disse quantos canais são
         _demux.Audio = (pes, pts) => ObterSom()?.Entregar(pes, pts);
         return d;
+    }
+
+    /// <summary>
+    /// O decodificador abriu mas uma thread dele caiu por exceção (vem da thread de entrada ou de saída dele): só registra o midia_falha, no mesmo formato
+    /// do AoNaoAbrir (etapa "entrada"/"saida"). Não mexe na tela nem na ligação (não é a falha de abrir que o AoNaoAbrir trata). O recuo de nível bem-sucedido
+    /// na abertura não passa por aqui, para não virar ruído. O Decodificador só avisa uma vez e nunca depois de desistir, então não duplica o AoNaoAbrir.
+    /// </summary>
+    void AoCair(Decodificador d, Decodificador.QuedaDoDecodificador q)
+    {
+        if (_fechando || _dec != d) return;
+        string erro = q.CodigoHex ?? q.Tipo;
+        Telemetria.Evento("midia_falha", new JsonObject
+        {
+            ["lado"] = "viewer", ["ligacao"] = _ligacaoTel, ["tentativa"] = $"{_ligacaoTel}-{_tentativaMidia}", ["etapa"] = q.Etapa,
+            ["codec"] = q.Codec, ["nome"] = q.Codec, ["nivel"] = q.Nivel, ["modo"] = q.Modo, ["resolucao"] = $"{q.Largura}x{q.Altura}", ["erro"] = erro,
+            ["diagnostico"] = q.Diagnostico.Length > 0 ? q.Diagnostico : q.Mensagem, ["transitorio"] = q.Transitorio, ["niveis_tentados"] = "",
+            ["transmitindo"] = ServicoTransmissao.AoVivo, ["capacidade"] = _capacidade, ["pecas"] = Quantas(),
+        });
     }
 
     /// <summary>

@@ -167,7 +167,11 @@ sealed class MolduraDaPeca : FrameLayout, ISurfaceHolderCallback
         RemoveView(velho);
     }
     public void SurfaceChanged(ISurfaceHolder holder, Format format, int width, int height) { }
-    public void SurfaceDestroyed(ISurfaceHolder holder) { }
+    public void SurfaceDestroyed(ISurfaceHolder holder)
+    {
+        // só a tela atual: a SurfaceView antiga que sai numa troca de camada já foi substituída e o decodificador está mostrando na nova
+        if (_video?.Holder is { } atual && (holder as Java.Lang.Object)?.Handle == (atual as Java.Lang.Object)?.Handle) Peca.PerderSurface();
+    }
 
     // ================================================================================================ o que aparece
 

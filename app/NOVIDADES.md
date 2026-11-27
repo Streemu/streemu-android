@@ -4,6 +4,12 @@ frases curtas, sem causa técnica e sem nome de pessoa (o arquivo vai para o rep
 PR comum só acrescenta itens em "## Não lançado" (no topo, antes da última versão); quem lança renomeia a seção para a versão.
 -->
 
+## Não lançado
+Vídeo mais firme em alguns celulares.
+
+### Correções
+- **Assistir em celulares de entrada:** em alguns aparelhos (como o Galaxy A11) o vídeo abria com a configuração mais simples a cada conexão, ou parava sem avisar. O app agora pede ao celular só o que ele sabe fazer e fecha o vídeo com mais cuidado.
+
 ## 0.1.28 — 2026-11-25
 Os últimos avisos com a cara do Streemu.
 

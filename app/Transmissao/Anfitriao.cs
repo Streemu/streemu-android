@@ -259,6 +259,7 @@ sealed class Anfitriao : IDisposable
     public void Parar()
     {
         if (Interlocked.Exchange(ref _jaParou, 1) != 0) return;
+        bool teveLive = _rodando;   // Iniciar chegou a anunciar (e a emitir o "live"); sem isto não há o que fechar
         _rodando = false;
         if (Ativo == this) Ativo = null;
         _captura.Video -= AoVideo; _captura.Audio -= AoAudio; _mux.Saida -= AoBloco;
@@ -268,6 +269,9 @@ sealed class Anfitriao : IDisposable
         foreach (var sid in todos) Encerrar(sid, avisar: true, esperar: true);
         _sala?.SetLive(null);
         _ultimaLive = null;
+        // o fim da live em si, como o app Windows manda (MainForm.Telemetria.cs, TelemetriaLive): sem ele a "live" propria nunca fechava no servidor
+        // (só as ligações com cada espectador, que têm o id da sessão); visto no bug hunt de 2026-11-27 com o Samsung A11
+        if (teveLive) Telemetria.Evento("live_fim", new JsonObject { ["transmissao"] = _streamId, ["ligacao"] = "propria" });
         Telemetria.Ativo = false;
         Log.Info("Transmissão parada.");
         Mudou?.Invoke();

@@ -186,6 +186,22 @@ static class Aparelho
         return (w, h, fps);
     }
 
+    /// <summary>
+    /// O tamanho REAL do vídeo (o do SPS, com recorte) é aceito pelo decodificador que abriu? Se não, testa também girado (h x w). Só descreve, para o log:
+    /// quem decide é o configure. "880p" virava 1564x880 supondo 16:9 e nunca foi conferido com o tamanho da live de verdade.
+    /// </summary>
+    public static string DescreverTamanho(MediaCodecInfo? info, int w, int h)
+    {
+        try
+        {
+            var cap = info?.GetCapabilitiesForType(MediaFormat.MimetypeVideoAvc)?.VideoCapabilities;
+            if (cap == null) return $"tamanho {w}x{h}: o decodificador não declara capacidades de vídeo";
+            string resultado = cap.IsSizeSupported(w, h) ? "aceito" : cap.IsSizeSupported(h, w) ? $"NÃO aceito, mas girado {h}x{w} seria" : "NÃO aceito (nem girado)";
+            return $"tamanho {w}x{h} {resultado} (largura {N(cap.SupportedWidths?.Lower):0}-{N(cap.SupportedWidths?.Upper):0}, altura {N(cap.SupportedHeights?.Lower):0}-{N(cap.SupportedHeights?.Upper):0}, alinhamento {cap.WidthAlignment}x{cap.HeightAlignment})";
+        }
+        catch (Exception e) { return $"tamanho {w}x{h}: não deu para conferir ({e.Message})"; }
+    }
+
     /// <summary>O decodificador de H.264 que o Android escolheria (o primeiro da lista, que é a ordem de preferência do fabricante).</summary>
     static MediaCodecInfo? DecodificadorH264()
     {
@@ -250,7 +266,8 @@ static class Aparelho
             if (info == null || cap == null) { detalhe = "nenhum decodificador de H.264 encontrado"; return Aguenta.NaoSei; }
             string nome = info.Name ?? "?";
             string maximo = $"até {N(cap.SupportedWidths?.Upper):0}x{N(cap.SupportedHeights?.Upper):0}";
-            if (!cap.IsSizeSupported(w, h)) { detalhe = $"{nome}: {w}x{h} fora do tamanho suportado ({maximo})"; return Aguenta.Nao; }
+            // w x h é o 16:9 suposto pela qualidade da sala (LerQualidade); a live pode estar em pé ou ter recorte, e o tamanho real só o SPS diz (ver DescreverTamanho)
+            if (!cap.IsSizeSupported(w, h)) { detalhe = $"{nome}: {w}x{h} fora do tamanho suportado ({maximo}); girado {h}x{w} {(cap.IsSizeSupported(h, w) ? "seria aceito" : "também não")}"; return Aguenta.Nao; }
 
             if (OperatingSystem.IsAndroidVersionAtLeast(29) && cap.SupportedPerformancePoints is { Count: > 0 } pontos)
             {
